@@ -1,68 +1,89 @@
-# Repository Guidelines
+# AGENTS.md - AlicIA Delivery Playbook
 
-## Project Structure & Module Organization
-This repository is a monorepo with two active projects:
+Este documento define como agentes devem operar neste repositorio com foco no projeto AlicIA.
 
-- `alicia/`: desktop app built with Tauri + Next.js.
-- `alicia/frontend/`: Next.js UI (`app/`, `components/`, `hooks/`, `lib/`, `styles/`).
-- `alicia/backend/`: Rust/Tauri runtime (`src/main.rs`, `tauri.conf.json`).
-- `codex/`: upstream Codex workspace.
-- `codex/codex-rs/`: Rust workspace (core crates such as `cli/`, `core/`, `tui/`, `mcp-server/`).
-- `codex/sdk/typescript/` and `codex/shell-tool-mcp/`: TypeScript packages with Jest-based tests.
+## Repository Sync (neuromancer)
 
-## Build, Test, and Development Commands
-Run commands from the indicated directory.
+- Keep `upstream` pointed to `https://github.com/openai/codex.git`.
+- Keep `origin` pointed to `https://github.com/danielheringers/neuromancer.git`.
+- Treat `main` as an upstream mirror branch (do not put project-specific work directly on `main`).
+- Do project-specific work on the `neuromancer` branch (or feature branches based on it).
+- Standard update flow:
+  1. `git fetch upstream`
+  2. `git checkout main`
+  3. `git merge --ff-only upstream/main`
+  4. `git push origin main`
+  5. `git checkout neuromancer`
+  6. `git merge main`
+  7. `git push origin neuromancer`
 
-- `cd alicia && pnpm run setup`: install frontend dependencies used by Tauri commands.
-- `cd alicia && pnpm run dev`: run Next.js + Tauri desktop app in development.
-- `cd alicia && pnpm run build`: produce desktop build via Tauri.
-- `cd alicia/frontend && pnpm run lint`: lint frontend code with ESLint.
-- `cd codex && pnpm run format`: check Prettier formatting for repo-level JS/MD/YAML.
-- `cd codex && just fmt && just clippy && just test`: Rust format, lint, and test sweep (`just test` uses `cargo nextest`).
-- `cd codex/codex-rs && cargo test -p <crate>`: targeted Rust validation.
-- `cd codex/sdk/typescript && pnpm test` (or `pnpm coverage`): SDK tests.
+## ExecPlans
 
-## Coding Style & Naming Conventions
-- Rust: format with `cargo fmt`; keep Clippy clean (`just clippy`).
-- TypeScript/Markdown: Prettier defaults from `codex/.prettierrc.toml` (`tabWidth=2`, `printWidth=80`, trailing commas).
-- Follow existing naming: kebab-case filenames (for example `components/ui/dropdown-menu.tsx`), PascalCase for React component exports, snake_case module names in Rust.
-- Keep modules focused; prefer small, composable functions over large mixed-responsibility files.
+When writing complex features or significant refactors, use an ExecPlan (as described in `.agent/PLANS.md`) from design to implementation.
 
-## Testing Guidelines
-- Add/update tests with every behavior change.
-- Rust tests: inline unit tests (`#[cfg(test)]`) or crate-level integration tests under `tests/`.
-- TypeScript tests: place Jest tests in `tests/` with `*.test.ts`.
-- For UI changes in `alicia/frontend`, include at minimum lint + build/dev smoke validation.
+### When ExecPlan is mandatory
 
-## Commit & Pull Request Guidelines
-- Use conventional-style commits observed in history: `type(scope): summary` (e.g., `docs(alicia): ...`, `alicia-core: ...`, `ci: ...`).
-- Keep commits atomic and runnable.
-- PRs should include: problem statement, solution summary, validation steps, and linked issue/execplan.
-- Include screenshots/GIFs for frontend/Tauri UI changes and call out config/security-impacting updates explicitly.
+Use an ExecPlan before coding when at least one condition is true:
+- the task touches multiple crates or more than one subsystem (Core, UI, Adapters, QA/CI, Docs),
+- the work is expected to take more than 30 minutes,
+- there is uncertainty in design, requirements, or external dependencies,
+- the task changes security behavior, policy, approval, filesystem guard, network policy, or auditing,
+- the task introduces or changes user-visible behavior in AlicIA.
 
-## Multi-Agent Playbook (AlicIA)
-- Use explicit multi-agent orchestration for maintenance tasks in `alicia/*`.
-- Always define ownership boundaries before implementation:
-  - `alicia-frontend` owns only `alicia/frontend/**`.
-  - `alicia-backend` owns only `alicia/backend/**`.
-  - `alicia-codex-bridge` owns only `alicia/codex-bridge/**`.
-- Follow this execution sequence:
-  1. Spawn `alicia-planner` (read-only) for plan, impacted files, risks, and validation checklist.
-  2. Spawn implementers in parallel (`alicia-frontend`, `alicia-backend`, `alicia-codex-bridge`) only when each has relevant scope.
-  3. Spawn `alicia-test` to run lint/build/tests relevant to the changed scope.
-  4. Spawn `alicia-reviewer` (read-only) for final bug/regression/security review.
-  5. Wait for all agents, then publish a consolidated summary with findings, validations, and next actions.
-- If one subproject depends on another, state the expected contract first (API/event/schema) before editing.
+### ExecPlan file location and naming
 
-## Default prompt template:
-Use multi-agent with the AlicIA team.
+- Store plans in `.agent/execplans/`.
+- Name files as `YYYY-MM-DD-<issue-id>-<short-slug>.md`.
+- Each plan must be self-contained and maintain the sections required by `.agent/PLANS.md`.
 
-Workflow:
-1) Spawn `alicia-planner` (read-only) to produce plan, risks, and touched files.
-2) Spawn implementation agents in parallel with strict ownership:
-- `alicia-frontend` -> only `alicia/frontend/**`
-- `alicia-backend` -> only `alicia/backend/**`
-- `alicia-codex-bridge` -> only `alicia/codex-bridge/**`
-3) Spawn `alicia-test` to validate lint/build/tests for affected scopes.
-4) Spawn `alicia-reviewer` (read-only) for final correctness/security/regression review.
-5) Wait for all agents and consolidate final output with changed files, validations run, findings, and next steps.
+### Living plan rule
+
+- Update the ExecPlan during implementation, not only at the end.
+- Keep `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` current.
+- At every stop point, split partial work into completed vs remaining entries.
+
+## Technical Guardrails (Non-negotiable)
+
+- Keep cross-platform parity (Windows, macOS, Linux) from the start.
+- Enforce security-critical behavior:
+  - block writes/actions outside workspace,
+  - apply network policy by profile,
+  - require explicit approval for sensitive actions,
+  - fail closed when there is no explicit decision,
+  - emit append-only JSONL audit logs with redaction.
+- Do not introduce non-MVP features unless explicitly requested.
+
+## Rust / codex-rs Rules
+
+In `codex-rs`:
+
+- Crate names are prefixed with `codex-`.
+- Inline `format!` args into `{}` whenever possible.
+- Collapse if-statements and prefer method references over redundant closures.
+- Prefer exhaustive `match` statements.
+- Prefer full-object assertions in tests (`assert_eq!`).
+- Do not create helper methods used only once.
+- If API changes, update relevant docs.
+
+### Tests
+
+- Always run tests for impacted crate(s).
+- Ask the user before running full workspace test suites such as `cargo test --all-features`.
+
+## Multi-agent mode
+
+Use multi-agent execution for multi-file or multi-stream tasks.
+
+- `explorer`: discovery and dependency mapping.
+- `worker`: implementation and targeted fixes.
+- `default`: orchestration, integration, and final validation.
+
+Concurrency guardrail:
+- Keep at most 6 concurrent sub-agents.
+- Reserve at least 1 slot for review/validation in complex tasks.
+
+Required handoff in summaries:
+- files changed,
+- commands/tests executed,
+- acceptance criteria covered,
+- blockers/risks and next actions.
