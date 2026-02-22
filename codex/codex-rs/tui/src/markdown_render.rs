@@ -158,6 +158,8 @@ where
             }
             Event::Html(html) => self.html(html, false),
             Event::InlineHtml(html) => self.html(html, true),
+            Event::InlineMath(text) => self.text(text),
+            Event::DisplayMath(text) => self.text(text),
             Event::FootnoteReference(_) => {}
             Event::TaskListMarker(_) => {}
         }
@@ -167,7 +169,7 @@ where
         match tag {
             Tag::Paragraph => self.start_paragraph(),
             Tag::Heading { level, .. } => self.start_heading(level),
-            Tag::BlockQuote => self.start_blockquote(),
+            Tag::BlockQuote(_) => self.start_blockquote(),
             Tag::CodeBlock(kind) => {
                 let indent = match kind {
                     CodeBlockKind::Fenced(_) => None,
@@ -191,7 +193,12 @@ where
             | Tag::TableHead
             | Tag::TableRow
             | Tag::TableCell
+            | Tag::DefinitionList
+            | Tag::DefinitionListTitle
+            | Tag::DefinitionListDefinition
             | Tag::Image { .. }
+            | Tag::Superscript
+            | Tag::Subscript
             | Tag::MetadataBlock(_) => {}
         }
     }
@@ -200,7 +207,7 @@ where
         match tag {
             TagEnd::Paragraph => self.end_paragraph(),
             TagEnd::Heading(_) => self.end_heading(),
-            TagEnd::BlockQuote => self.end_blockquote(),
+            TagEnd::BlockQuote(_) => self.end_blockquote(),
             TagEnd::CodeBlock => self.end_codeblock(),
             TagEnd::List(_) => self.end_list(),
             TagEnd::Item => {
@@ -215,7 +222,12 @@ where
             | TagEnd::TableHead
             | TagEnd::TableRow
             | TagEnd::TableCell
+            | TagEnd::DefinitionList
+            | TagEnd::DefinitionListTitle
+            | TagEnd::DefinitionListDefinition
             | TagEnd::Image
+            | TagEnd::Superscript
+            | TagEnd::Subscript
             | TagEnd::MetadataBlock(_) => {}
         }
     }

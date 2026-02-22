@@ -376,6 +376,106 @@ async fn review_start_rejects_empty_custom_instructions() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn review_start_with_files_target_uses_file_scoped_hint() -> Result<()> {
+    let review_payload = json!({
+        "findings": [],
+        "overall_correctness": "good",
+        "overall_explanation": "Looks good.",
+        "overall_confidence_score": 0.8
+    })
+    .to_string();
+    let server = create_mock_responses_server_repeating_assistant(&review_payload).await;
+
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path(), &server.uri())?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+    let thread_id = start_default_thread(&mut mcp).await?;
+
+    let request_id = mcp
+        .send_review_start_request(ReviewStartParams {
+            thread_id,
+            delivery: Some(ReviewDelivery::Inline),
+            target: ReviewTarget::Files {
+                paths: vec![
+                    " src/lib.rs ".to_string(),
+                    "".to_string(),
+                    "src/main.rs".to_string(),
+                ],
+            },
+        })
+        .await?;
+    let review_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let ReviewStartResponse { turn, .. } = to_response::<ReviewStartResponse>(review_resp)?;
+    let turn_id = turn.id;
+
+    let mut saw_entered_review_mode = false;
+    for _ in 0..10 {
+        let item_started: JSONRPCNotification = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.read_stream_until_notification_message("item/started"),
+        )
+        .await??;
+        let started: ItemStartedNotification =
+            serde_json::from_value(item_started.params.expect("params must be present"))?;
+        if let ThreadItem::EnteredReviewMode { id, review } = started.item {
+            assert_eq!(id, turn_id);
+            assert_eq!(review, "2 files");
+            saw_entered_review_mode = true;
+            break;
+        }
+    }
+    assert!(
+        saw_entered_review_mode,
+        "did not observe enteredReviewMode item for file-targeted review"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn review_start_rejects_empty_files_paths() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path(), &server.uri())?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+    let thread_id = start_default_thread(&mut mcp).await?;
+
+    let request_id = mcp
+        .send_review_start_request(ReviewStartParams {
+            thread_id,
+            delivery: Some(ReviewDelivery::Inline),
+            target: ReviewTarget::Files {
+                paths: vec![" ".to_string(), "\n".to_string()],
+            },
+        })
+        .await?;
+    let error: JSONRPCError = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
+    assert!(
+        error
+            .error
+            .message
+            .contains("paths must contain at least one non-empty path"),
+        "unexpected message: {}",
+        error.error.message
+    );
+
+    Ok(())
+}
+
 async fn start_default_thread(mcp: &mut McpProcess) -> Result<String> {
     let thread_req = mcp
         .send_thread_start_request(ThreadStartParams {

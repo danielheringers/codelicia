@@ -465,6 +465,21 @@ impl CodexMessageProcessor {
                     instructions: trimmed,
                 }
             }
+            ApiReviewTarget::Files { paths } => {
+                let cleaned_paths: Vec<String> = paths
+                    .into_iter()
+                    .map(|path| path.trim().to_string())
+                    .filter(|path| !path.is_empty())
+                    .collect();
+                if cleaned_paths.is_empty() {
+                    return Err(invalid_request(
+                        "paths must contain at least one non-empty path".to_string(),
+                    ));
+                }
+                ApiReviewTarget::Files {
+                    paths: cleaned_paths,
+                }
+            }
         };
 
         let core_target = match cleaned_target {
@@ -472,6 +487,7 @@ impl CodexMessageProcessor {
             ApiReviewTarget::BaseBranch { branch } => CoreReviewTarget::BaseBranch { branch },
             ApiReviewTarget::Commit { sha, title } => CoreReviewTarget::Commit { sha, title },
             ApiReviewTarget::Custom { instructions } => CoreReviewTarget::Custom { instructions },
+            ApiReviewTarget::Files { paths } => CoreReviewTarget::Files { paths },
         };
 
         let hint = codex_core::review_prompts::user_facing_hint(&core_target);
@@ -6396,6 +6412,47 @@ mod tests {
             input_schema: json!({"properties": {}}),
         }];
         validate_dynamic_tools(&tools).expect("valid schema");
+    }
+
+    #[test]
+    fn review_request_from_target_files_trims_and_filters_paths() {
+        let (request, hint) =
+            MessageProcessor::review_request_from_target(ApiReviewTarget::Files {
+                paths: vec![
+                    " src/lib.rs ".to_string(),
+                    "".to_string(),
+                    "\n\t".to_string(),
+                    "src/main.rs".to_string(),
+                ],
+            })
+            .expect("files target should be accepted");
+
+        assert_eq!(
+            request,
+            ReviewRequest {
+                target: CoreReviewTarget::Files {
+                    paths: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
+                },
+                user_facing_hint: Some("2 files".to_string()),
+            }
+        );
+        assert_eq!(hint, "2 files");
+    }
+
+    #[test]
+    fn review_request_from_target_files_rejects_empty_paths() {
+        let err = MessageProcessor::review_request_from_target(ApiReviewTarget::Files {
+            paths: vec![" ".to_string(), "\t".to_string()],
+        })
+        .expect_err("empty file list should be rejected");
+
+        assert_eq!(err.code, INVALID_REQUEST_ERROR_CODE);
+        assert!(
+            err.message
+                .contains("paths must contain at least one non-empty path"),
+            "unexpected message: {}",
+            err.message
+        );
     }
 
     #[test]

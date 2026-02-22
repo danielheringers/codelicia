@@ -19,6 +19,8 @@ const COMMIT_PROMPT_WITH_TITLE: &str = "Review the code changes introduced by co
 const COMMIT_PROMPT: &str =
     "Review the code changes introduced by commit {sha}. Provide prioritized, actionable findings.";
 
+const FILES_PROMPT_PREFIX: &str = "Review only the listed files and keep the scope strictly limited to them. Do not review unrelated files unless you explicitly call out why broader context is required.";
+
 pub fn resolve_review_request(
     request: ReviewRequest,
     cwd: &Path,
@@ -64,6 +66,27 @@ pub fn review_prompt(target: &ReviewTarget, cwd: &Path) -> anyhow::Result<String
             }
             Ok(prompt.to_string())
         }
+        ReviewTarget::Files { paths } => {
+            let cleaned_paths: Vec<String> = paths
+                .iter()
+                .map(|path| path.trim())
+                .filter(|path| !path.is_empty())
+                .map(ToString::to_string)
+                .collect();
+
+            if cleaned_paths.is_empty() {
+                anyhow::bail!("Review file paths must contain at least one non-empty path");
+            }
+
+            let listed_paths = cleaned_paths
+                .iter()
+                .map(|path| format!("- {path}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            Ok(format!(
+                "{FILES_PROMPT_PREFIX}\n\nTarget files:\n{listed_paths}"
+            ))
+        }
     }
 }
 
@@ -80,6 +103,19 @@ pub fn user_facing_hint(target: &ReviewTarget) -> String {
             }
         }
         ReviewTarget::Custom { instructions } => instructions.trim().to_string(),
+        ReviewTarget::Files { paths } => {
+            let cleaned_paths: Vec<&str> = paths
+                .iter()
+                .map(|path| path.trim())
+                .filter(|path| !path.is_empty())
+                .collect();
+
+            match cleaned_paths.len() {
+                0 => "files".to_string(),
+                1 => format!("file {}", cleaned_paths[0]),
+                _ => format!("{} files", cleaned_paths.len()),
+            }
+        }
     }
 }
 
@@ -89,5 +125,64 @@ impl From<ResolvedReviewRequest> for ReviewRequest {
             target: resolved.target,
             user_facing_hint: Some(resolved.user_facing_hint),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn review_prompt_files_rejects_when_no_non_empty_paths() {
+        let err = review_prompt(
+            &ReviewTarget::Files {
+                paths: vec!["".to_string(), "   ".to_string()],
+            },
+            Path::new("."),
+        )
+        .expect_err("expected validation error");
+
+        assert!(
+            err.to_string()
+                .contains("must contain at least one non-empty path")
+        );
+    }
+
+    #[test]
+    fn review_prompt_files_uses_trimmed_non_empty_paths_only() {
+        let prompt = review_prompt(
+            &ReviewTarget::Files {
+                paths: vec![
+                    " src/lib.rs ".to_string(),
+                    "".to_string(),
+                    "\t".to_string(),
+                    "src/main.rs".to_string(),
+                ],
+            },
+            Path::new("."),
+        )
+        .expect("prompt should be generated");
+
+        assert!(prompt.contains("Target files:"));
+        assert!(prompt.contains("- src/lib.rs"));
+        assert!(prompt.contains("- src/main.rs"));
+        assert!(!prompt.contains("- \t"));
+    }
+
+    #[test]
+    fn user_facing_hint_files_reflects_file_scope() {
+        assert_eq!(
+            user_facing_hint(&ReviewTarget::Files {
+                paths: vec![" src/lib.rs ".to_string(), "".to_string()],
+            }),
+            "file src/lib.rs"
+        );
+
+        assert_eq!(
+            user_facing_hint(&ReviewTarget::Files {
+                paths: vec!["a.rs".to_string(), "b.rs".to_string()],
+            }),
+            "2 files"
+        );
     }
 }

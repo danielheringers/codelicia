@@ -874,6 +874,241 @@ export interface ParsedAgentDiffSegment {
 export type ParsedAgentMessageSegment =
   | ParsedAgentTextSegment
   | ParsedAgentDiffSegment
+
+interface ParsedReviewFindingComment {
+  path: string
+  lineStart: number
+  lineEnd: number | null
+  title: string
+  body: string
+}
+
+function normalizeReviewPathForMatch(path: string): string {
+  let normalized = path.trim()
+  if (!normalized) {
+    return ""
+  }
+
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    normalized = normalized.slice(1, -1)
+  }
+
+  normalized = normalized
+    .replace(/\\/g, "/")
+    .replace(/\/{2,}/g, "/")
+    .replace(/^\.\/+/, "")
+    .replace(/\/\.\//g, "/")
+    .trim()
+
+  return normalized.toLowerCase()
+}
+
+function parseReviewFindingHeader(rawLine: string): Omit<ParsedReviewFindingComment, "body"> | null {
+  if (!rawLine.trimStart().startsWith("- ")) {
+    return null
+  }
+
+  const bullet = rawLine.replace(/^\s*-\s+(?:\[[xX ]\]\s+)?/, "").trim()
+  if (!bullet) {
+    return null
+  }
+
+  let separatorIndex = bullet.lastIndexOf(" — ")
+  if (separatorIndex < 0) {
+    separatorIndex = bullet.lastIndexOf(" - ")
+  }
+  if (separatorIndex <= 0) {
+    return null
+  }
+
+  const title = bullet.slice(0, separatorIndex).trim()
+  const location = bullet.slice(separatorIndex + 3).trim()
+  if (!title || !location) {
+    return null
+  }
+
+  const locationMatch = location.match(/^(.*):(\d+)(?:-(\d+))?$/)
+  if (!locationMatch) {
+    return null
+  }
+
+  const path = locationMatch[1]?.trim() ?? ""
+  const lineStart = Number(locationMatch[2])
+  const lineEndRaw = locationMatch[3]
+  const lineEnd =
+    typeof lineEndRaw === "string" && lineEndRaw.length > 0 ? Number(lineEndRaw) : null
+
+  if (!path || !Number.isFinite(lineStart)) {
+    return null
+  }
+
+  return {
+    path,
+    lineStart,
+    lineEnd: Number.isFinite(lineEnd ?? Number.NaN) ? lineEnd : null,
+    title,
+  }
+}
+
+function parseReviewFindingsFromText(content: string): ParsedReviewFindingComment[] {
+  const lines = content.split(/\r?\n/)
+  const findings: ParsedReviewFindingComment[] = []
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const header = parseReviewFindingHeader(lines[index] ?? "")
+    if (!header) {
+      continue
+    }
+
+    const bodyLines: string[] = []
+    for (index += 1; index < lines.length; index += 1) {
+      const line = lines[index] ?? ""
+      if (parseReviewFindingHeader(line)) {
+        index -= 1
+        break
+      }
+
+      if (!line.trim()) {
+        if (bodyLines.length > 0) {
+          bodyLines.push("")
+        }
+        continue
+      }
+
+      if (/^\s{2,}|\t/.test(line) || bodyLines.length > 0) {
+        if (/^\s{2,}|\t/.test(line)) {
+          bodyLines.push(line.trim())
+          continue
+        }
+        index -= 1
+        break
+      }
+
+      index -= 1
+      break
+    }
+
+    while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1] === "") {
+      bodyLines.pop()
+    }
+
+    findings.push({
+      ...header,
+      body: bodyLines.join("\n").trim(),
+    })
+  }
+
+  return findings
+}
+
+function latestReviewMessagesScope(reviewMessages: Message[]): Message[] {
+  for (let index = reviewMessages.length - 1; index >= 0; index -= 1) {
+    const message = reviewMessages[index]
+    if (message?.content.trimStart().startsWith("[review] started")) {
+      return reviewMessages.slice(index + 1)
+    }
+  }
+
+  return reviewMessages
+}
+
+export function extractReviewCommentsByFile(
+  reviewMessages: Message[],
+  filePaths: string[],
+): Record<string, string> {
+  const normalizedFiles = filePaths.map((path) => ({
+    original: path,
+    normalized: normalizeReviewPathForMatch(path),
+  }))
+
+  const findFileForReviewPath = (reviewPath: string): string | null => {
+    const normalizedReviewPath = normalizeReviewPathForMatch(reviewPath)
+    if (!normalizedReviewPath) {
+      return null
+    }
+
+    let bestMatch: { path: string; score: number } | null = null
+    let ambiguousBestMatch = false
+    for (const file of normalizedFiles) {
+      if (!file.normalized) {
+        continue
+      }
+
+      let score = -1
+      if (normalizedReviewPath === file.normalized) {
+        score = 10_000 + file.normalized.length
+      } else if (normalizedReviewPath.endsWith(`/${file.normalized}`)) {
+        score = file.normalized.length
+      } else if (file.normalized.endsWith(`/${normalizedReviewPath}`)) {
+        score = normalizedReviewPath.length
+      }
+
+      if (score < 0) {
+        continue
+      }
+      if (!bestMatch || score > bestMatch.score) {
+        bestMatch = { path: file.original, score }
+        ambiguousBestMatch = false
+        continue
+      }
+      if (score === bestMatch.score && bestMatch.path !== file.original) {
+        ambiguousBestMatch = true
+      }
+    }
+
+    if (!bestMatch || ambiguousBestMatch) {
+      return null
+    }
+
+    return bestMatch.path
+  }
+
+  const commentsByFile = new Map<string, string[]>()
+  const dedupeByFile = new Map<string, Set<string>>()
+
+  for (const message of latestReviewMessagesScope(reviewMessages)) {
+    for (const finding of parseReviewFindingsFromText(message.content)) {
+      const matchedPath = findFileForReviewPath(finding.path)
+      if (!matchedPath) {
+        continue
+      }
+
+      const locationLabel =
+        finding.lineEnd != null && finding.lineEnd !== finding.lineStart
+          ? `${finding.lineStart}-${finding.lineEnd}`
+          : `${finding.lineStart}`
+
+      const commentLines = [finding.title, `@ line ${locationLabel}`]
+      if (finding.body) {
+        commentLines.push(finding.body)
+      }
+      const comment = commentLines.join("\n")
+
+      const dedupe = dedupeByFile.get(matchedPath) ?? new Set<string>()
+      if (dedupe.has(comment)) {
+        continue
+      }
+      dedupe.add(comment)
+      dedupeByFile.set(matchedPath, dedupe)
+
+      const existing = commentsByFile.get(matchedPath) ?? []
+      existing.push(comment)
+      commentsByFile.set(matchedPath, existing)
+    }
+  }
+
+  const result: Record<string, string> = {}
+  for (const filePath of filePaths) {
+    const comments = commentsByFile.get(filePath) ?? []
+    result[filePath] = comments.join("\n\n")
+  }
+
+  return result
+}
+
 export function parseAgentDiffMarkdownSegments(
   content: string,
 ): ParsedAgentMessageSegment[] {
@@ -1022,6 +1257,17 @@ export function itemIdentity(item: Record<string, unknown>): string | null {
     return String(item.id)
   }
   return null
+}
+
+export function countReviewFindingsByFile(
+  commentsByFile: Record<string, string>,
+): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const [path, comment] of Object.entries(commentsByFile)) {
+    if (!comment.trim()) { counts[path] = 0; continue }
+    counts[path] = comment.split("\n\n").filter(b => b.trim().length > 0).length
+  }
+  return counts
 }
 
 export function mergeTerminalBuffer(previous: string, chunk: string): string {

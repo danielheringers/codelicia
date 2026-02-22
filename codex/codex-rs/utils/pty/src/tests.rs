@@ -260,7 +260,15 @@ async fn pipe_and_pty_share_interface() -> anyhow::Result<()> {
 
     let pipe =
         spawn_pipe_process(&pipe_program, &pipe_args, Path::new("."), &env_map, &None).await?;
-    let pty = spawn_pty_process(&pty_program, &pty_args, Path::new("."), &env_map, &None, None).await?;
+    let pty = spawn_pty_process(
+        &pty_program,
+        &pty_args,
+        Path::new("."),
+        &env_map,
+        &None,
+        None,
+    )
+    .await?;
 
     let timeout_ms = if cfg!(windows) { 10_000 } else { 3_000 };
     let (pipe_out, pipe_code) =

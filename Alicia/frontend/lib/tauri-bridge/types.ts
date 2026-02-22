@@ -496,6 +496,7 @@ export type ReviewTarget =
   | { type: "baseBranch"; branch: string }
   | { type: "commit"; sha: string; title?: string | null }
   | { type: "custom"; instructions: string }
+  | { type: "files"; paths: string[] }
 
 export interface CodexReviewStartRequest {
   threadId?: string

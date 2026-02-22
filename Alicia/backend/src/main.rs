@@ -88,6 +88,7 @@ const CODEX_HELP_SLASH_COMMANDS: &[&str] = &[
     "/experimental",
     "/skills",
     "/review",
+    "/review-file",
     "/rename",
     "/new",
     "/resume",

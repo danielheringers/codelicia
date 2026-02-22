@@ -124,6 +124,9 @@ export default function AliciaTerminal() {
   const autoTerminalCreatedRef = useRef(false)
   const reviewRoutingRef = useRef(false)
   const turnDiffFilesRef = useRef<DiffFileView[]>([])
+  const wasReviewThinkingRef = useRef(false)
+
+  const [isReviewComplete, setIsReviewComplete] = useState(false)
 
   useEffect(() => {
     const cached = readModelsCache()
@@ -134,6 +137,17 @@ export default function AliciaTerminal() {
     setModelsCachedAt(cached.cachedAt)
     setModelsFromCache(true)
   }, [])
+
+  useEffect(() => {
+    const nowThinking = isThinking && reviewRoutingRef.current
+    if (nowThinking) {
+      wasReviewThinkingRef.current = true
+      setIsReviewComplete(false)
+    } else if (wasReviewThinkingRef.current && !isThinking) {
+      wasReviewThinkingRef.current = false
+      setIsReviewComplete(true)
+    }
+  }, [isThinking])
 
   const nextMessageId = useCallback(() => {
     idRef.current += 1
@@ -943,9 +957,15 @@ export default function AliciaTerminal() {
           pendingApprovals={pendingApprovals}
           reviewMessages={reviewMessages}
           isReviewThinking={isThinking && reviewRoutingRef.current}
+          isReviewComplete={isReviewComplete}
           onRunReview={() => {
             void refreshWorkspaceChanges()
             void handleSlashCommand("/review")
+          }}
+          onRunReviewFile={(selectedPath) => {
+            void refreshWorkspaceChanges()
+            const escapedPath = selectedPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+            void handleSlashCommand(`/review-file "${escapedPath}"`)
           }}
           onCommitApproved={handleCommitApprovedReview}
           onClose={() => setAliciaState((prev) => ({ ...prev, activePanel: null }))}

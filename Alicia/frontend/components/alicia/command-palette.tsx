@@ -52,6 +52,7 @@ const commandIcons: Record<string, typeof Cpu> = {
   "/agent": Wrench,
   "/diff": Code,
   "/review": Eye,
+  "/review-file": FileText,
   "/mention": Search,
   "/skills": Sparkles,
   "/init": TerminalIcon,

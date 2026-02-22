@@ -1,11 +1,25 @@
 "use client"
 
-import { Check, FileCode2, ShieldAlert, ShieldCheck, X } from "lucide-react"
+import {
+  Check,
+  CheckCheck,
+  CheckSquare,
+  Clock,
+  FileCode2,
+  Filter,
+  Minus,
+  ShieldAlert,
+  ShieldCheck,
+  Square,
+  X,
+} from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { DiffViewer } from "@/components/alicia/diff-viewer"
 import { type FileChange } from "@/lib/alicia-types"
 import {
+  countReviewFindingsByFile,
+  extractReviewCommentsByFile,
   parseAgentDiffMarkdownSegments,
   parseDiffSystemMessage,
   parseUnifiedDiffFiles,
@@ -14,7 +28,24 @@ import {
   type Message,
 } from "@/lib/alicia-runtime-helpers"
 
-type FileDecision = "pending" | "approved" | "rejected"
+type FileDecision = "pending" | "reviewed" | "approved" | "rejected"
+
+type FilterMode = "all" | "pending" | "reviewed" | "approved" | "rejected" | "with-findings"
+type SortMode = "name" | "status" | "findings"
+
+const decisionConfig: Record<FileDecision, { icon: typeof Clock; color: string; label: string }> = {
+  pending:  { icon: Clock, color: "text-muted-foreground", label: "Pending" },
+  reviewed: { icon: CheckCheck, color: "text-terminal-blue", label: "Reviewed" },
+  approved: { icon: ShieldCheck, color: "text-terminal-green", label: "Approved" },
+  rejected: { icon: ShieldAlert, color: "text-terminal-red", label: "Rejected" },
+}
+
+const decisionSortOrder: Record<FileDecision, number> = {
+  pending: 0,
+  reviewed: 1,
+  approved: 2,
+  rejected: 3,
+}
 
 interface ReviewModeProps {
   fileChanges: FileChange[]
@@ -22,7 +53,9 @@ interface ReviewModeProps {
   pendingApprovals: ApprovalRequestState[]
   reviewMessages: Message[]
   isReviewThinking: boolean
+  isReviewComplete: boolean
   onRunReview: () => void
+  onRunReviewFile: (selectedPath: string) => void
   onCommitApproved: (payload: {
     approvedPaths: string[]
     message: string
@@ -79,7 +112,9 @@ export function ReviewMode({
   pendingApprovals,
   reviewMessages,
   isReviewThinking,
+  isReviewComplete,
   onRunReview,
+  onRunReviewFile,
   onCommitApproved,
   onClose,
 }: ReviewModeProps) {
@@ -157,14 +192,82 @@ export function ReviewMode({
     return entries
   }, [reviewMessages, turnDiffFiles])
 
+  const reviewCommentsByFile = useMemo(
+    () => extractReviewCommentsByFile(reviewMessages, files.map((file) => file.name)),
+    [files, reviewMessages],
+  )
+
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [decisions, setDecisions] = useState<Record<string, FileDecision>>({})
   const [comments, setComments] = useState<Record<string, string>>({})
+  const [manualCommentEdits, setManualCommentEdits] = useState<Record<string, boolean>>({})
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({})
   const [commitMessage, setCommitMessage] = useState("chore(review): commit approved files")
   const [isCommitting, setIsCommitting] = useState(false)
   const [hasPendingFeedItems, setHasPendingFeedItems] = useState(0)
   const [feedAtBottom, setFeedAtBottom] = useState(true)
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  const [filterMode, setFilterMode] = useState<FilterMode>("all")
+  const [sortMode, setSortMode] = useState<SortMode>("name")
+  const [reviewCompletionApplied, setReviewCompletionApplied] = useState(false)
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false)
+
+  const findingsCountByFile = useMemo(
+    () => countReviewFindingsByFile(reviewCommentsByFile),
+    [reviewCommentsByFile],
+  )
+
+  const displayFiles = useMemo(() => {
+    let filtered = files
+    if (filterMode === "pending") {
+      filtered = files.filter(f => (decisions[f.name] ?? "pending") === "pending")
+    } else if (filterMode === "reviewed") {
+      filtered = files.filter(f => decisions[f.name] === "reviewed")
+    } else if (filterMode === "approved") {
+      filtered = files.filter(f => decisions[f.name] === "approved")
+    } else if (filterMode === "rejected") {
+      filtered = files.filter(f => decisions[f.name] === "rejected")
+    } else if (filterMode === "with-findings") {
+      filtered = files.filter(f => (findingsCountByFile[f.name] ?? 0) > 0)
+    }
+
+    const sorted = [...filtered]
+    if (sortMode === "status") {
+      sorted.sort((a, b) => {
+        const da = decisionSortOrder[decisions[a.name] ?? "pending"] ?? 0
+        const db = decisionSortOrder[decisions[b.name] ?? "pending"] ?? 0
+        return da - db || a.name.localeCompare(b.name)
+      })
+    } else if (sortMode === "findings") {
+      sorted.sort((a, b) => {
+        const fa = findingsCountByFile[a.name] ?? 0
+        const fb = findingsCountByFile[b.name] ?? 0
+        return fb - fa || a.name.localeCompare(b.name)
+      })
+    } else {
+      sorted.sort((a, b) => a.name.localeCompare(b.name))
+    }
+
+    return sorted
+  }, [files, filterMode, sortMode, decisions, findingsCountByFile])
+
+  const statusCounts = useMemo(() => ({
+    all: files.length,
+    pending: files.filter(f => (decisions[f.name] ?? "pending") === "pending").length,
+    reviewed: files.filter(f => decisions[f.name] === "reviewed").length,
+    approved: files.filter(f => decisions[f.name] === "approved").length,
+    rejected: files.filter(f => decisions[f.name] === "rejected").length,
+    "with-findings": files.filter(f => (findingsCountByFile[f.name] ?? 0) > 0).length,
+  }), [files, decisions, findingsCountByFile])
+
+  const reviewSummary = useMemo(() => ({
+    totalFiles: files.length,
+    reviewedCount: files.filter(f => decisions[f.name] === "reviewed").length,
+    approvedCount: files.filter(f => decisions[f.name] === "approved").length,
+    rejectedCount: files.filter(f => decisions[f.name] === "rejected").length,
+    pendingCount: files.filter(f => (decisions[f.name] ?? "pending") === "pending").length,
+    totalFindings: Object.values(findingsCountByFile).reduce((sum, count) => sum + count, 0),
+  }), [files, decisions, findingsCountByFile])
 
   const feedRef = useRef<HTMLDivElement | null>(null)
   const previousFeedEntryCountRef = useRef(0)
@@ -247,6 +350,14 @@ export function ReviewMode({
       return next
     })
 
+    setManualCommentEdits((previous) => {
+      const next: Record<string, boolean> = {}
+      for (const file of files) {
+        next[file.name] = previous[file.name] ?? false
+      }
+      return next
+    })
+
     setExpandedComments((previous) => {
       const next: Record<string, boolean> = {}
       for (const file of files) {
@@ -261,7 +372,53 @@ export function ReviewMode({
       }
       return files[0]?.name ?? null
     })
+
+    setSelectedPaths(prev => {
+      const validNames = new Set(files.map(f => f.name))
+      const filtered = new Set([...prev].filter(p => validNames.has(p)))
+      return filtered.size === prev.size ? prev : filtered
+    })
   }, [files])
+
+  useEffect(() => {
+    setComments((previous) => {
+      let changed = false
+      const next = { ...previous }
+
+      for (const file of files) {
+        const autoComment = reviewCommentsByFile[file.name] ?? ""
+        if (manualCommentEdits[file.name]) {
+          continue
+        }
+
+        if ((next[file.name] ?? "") !== autoComment) {
+          next[file.name] = autoComment
+          changed = true
+        }
+      }
+
+      return changed ? next : previous
+    })
+  }, [files, manualCommentEdits, reviewCommentsByFile])
+
+  useEffect(() => {
+    if (!isReviewComplete || reviewCompletionApplied) return
+    setDecisions(prev => {
+      const next = { ...prev }
+      for (const file of files) {
+        if (next[file.name] !== "pending") continue
+        if (!(reviewCommentsByFile[file.name] ?? "").trim()) {
+          next[file.name] = "reviewed"
+        }
+      }
+      return next
+    })
+    setReviewCompletionApplied(true)
+  }, [isReviewComplete, reviewCompletionApplied, files, reviewCommentsByFile])
+
+  useEffect(() => {
+    if (isReviewThinking) setReviewCompletionApplied(false)
+  }, [isReviewThinking])
 
   const selectedFile = useMemo(
     () => files.find((file) => file.name === selectedPath) ?? null,
@@ -270,7 +427,9 @@ export function ReviewMode({
   const selectedFileHasConflict = selectedFile?.status === "unmerged"
 
   const approvedPaths = useMemo(
-    () => files.filter((file) => decisions[file.name] === "approved").map((file) => file.name),
+    () => files
+      .filter((file) => decisions[file.name] === "approved" || decisions[file.name] === "reviewed")
+      .map((file) => file.name),
     [decisions, files],
   )
 
@@ -285,6 +444,60 @@ export function ReviewMode({
     const removals = selectedFile.diff.lines.filter((line) => line.type === "remove").length
     return { additions, removals }
   }, [selectedFile])
+
+  const toggleFileSelection = useCallback((path: string) => {
+    setSelectedPaths(prev => {
+      const next = new Set(prev)
+      if (next.has(path)) { next.delete(path) } else { next.add(path) }
+      return next
+    })
+  }, [])
+
+  const selectAll = useCallback(
+    () => setSelectedPaths(new Set(displayFiles.map(f => f.name))),
+    [displayFiles],
+  )
+
+  const deselectAll = useCallback(() => setSelectedPaths(new Set()), [])
+
+  const isAllSelected = displayFiles.length > 0 && displayFiles.every(f => selectedPaths.has(f.name))
+  const isSomeSelected = displayFiles.some(f => selectedPaths.has(f.name)) && !isAllSelected
+
+  const batchApprove = useCallback(() => {
+    setDecisions(prev => {
+      const next = { ...prev }
+      for (const path of selectedPaths) {
+        const file = files.find(f => f.name === path)
+        if (file && file.status !== "unmerged") {
+          next[path] = "approved"
+        }
+      }
+      return next
+    })
+    setSelectedPaths(new Set())
+  }, [selectedPaths, files])
+
+  const batchReject = useCallback(() => {
+    setDecisions(prev => {
+      const next = { ...prev }
+      for (const path of selectedPaths) {
+        next[path] = "rejected"
+      }
+      return next
+    })
+    setSelectedPaths(new Set())
+  }, [selectedPaths])
+
+  const batchReset = useCallback(() => {
+    setDecisions(prev => {
+      const next = { ...prev }
+      for (const path of selectedPaths) {
+        next[path] = "pending"
+      }
+      return next
+    })
+    setSelectedPaths(new Set())
+  }, [selectedPaths])
 
   const handleCommitApproved = async () => {
     if (!canCommit) {
@@ -322,6 +535,18 @@ export function ReviewMode({
               Run /review
             </button>
             <button
+              onClick={() => {
+                if (!selectedPath) {
+                  return
+                }
+                onRunReviewFile(selectedPath)
+              }}
+              disabled={!selectedPath}
+              className="px-2 py-1 rounded text-xs bg-terminal-cyan/15 text-terminal-cyan hover:bg-terminal-cyan/25 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Run /review-file
+            </button>
+            <button
               onClick={onClose}
               className="p-1 rounded hover:bg-[#b9bcc01c] text-muted-foreground"
               aria-label="Close review mode"
@@ -341,35 +566,149 @@ export function ReviewMode({
           </div>
         ) : (
           <div className="flex-1 min-h-0 grid grid-cols-[minmax(240px,320px)_1fr]">
-            <div className="border-r border-panel-border min-h-0 overflow-y-auto p-2">
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground px-2 py-1">
-                Files
-              </div>
-              {files.map((file) => {
-                const decision = decisions[file.name] ?? "pending"
-                const isSelected = selectedPath === file.name
-                return (
+            <div className="border-r border-panel-border min-h-0 flex flex-col">
+              <div className="px-2 pt-2 pb-1 flex items-center gap-2">
+                <button
+                  onClick={() => isAllSelected ? deselectAll() : selectAll()}
+                  className="p-0.5 text-muted-foreground hover:text-terminal-fg"
+                  aria-label={isAllSelected ? "Deselect all" : "Select all"}
+                >
+                  {isAllSelected ? (
+                    <CheckSquare className="w-3.5 h-3.5 text-terminal-blue" />
+                  ) : isSomeSelected ? (
+                    <Minus className="w-3.5 h-3.5 text-terminal-blue" />
+                  ) : (
+                    <Square className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Files ({files.length})
+                </span>
+                <div className="ml-auto flex items-center gap-1">
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowFilterDropdown(prev => !prev)}
+                      className={`p-1 rounded text-muted-foreground hover:text-terminal-fg hover:bg-[#b9bcc01c] ${filterMode !== "all" ? "text-terminal-blue" : ""}`}
+                      aria-label="Filter files"
+                    >
+                      <Filter className="w-3.5 h-3.5" />
+                    </button>
+                    {showFilterDropdown && (
+                      <div className="absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded border border-panel-border bg-panel-bg shadow-lg py-1">
+                        {(["all", "pending", "reviewed", "approved", "rejected", "with-findings"] as FilterMode[]).map(mode => (
+                          <button
+                            key={mode}
+                            onClick={() => { setFilterMode(mode); setShowFilterDropdown(false) }}
+                            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[#b9bcc01c] flex items-center justify-between ${filterMode === mode ? "text-terminal-blue" : "text-terminal-fg"}`}
+                          >
+                            <span className="capitalize">{mode === "with-findings" ? "With Findings" : mode}</span>
+                            <span className="text-[10px] text-muted-foreground">{statusCounts[mode]}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
-                    key={file.name}
-                    onClick={() => setSelectedPath(file.name)}
-                    className={`w-full text-left rounded px-2 py-2 mb-1 border transition-colors ${
-                      isSelected
-                        ? "bg-sidebar-accent border-sidebar-accent"
-                        : "border-transparent hover:bg-[#b9bcc01c]"
-                    }`}
+                    onClick={() => setSortMode(prev => prev === "name" ? "status" : prev === "status" ? "findings" : "name")}
+                    className="p-1 rounded text-[10px] text-muted-foreground hover:text-terminal-fg hover:bg-[#b9bcc01c]"
+                    title={`Sort: ${sortMode}`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold w-3 ${statusClass[file.status]}`}>
-                        {statusLabel[file.status]}
-                      </span>
-                      <span className="text-xs text-terminal-fg truncate">{file.name}</span>
-                    </div>
-                    <div className="mt-1 text-[10px] text-muted-foreground">
-                      {decision === "approved" ? "Approved" : decision === "rejected" ? "Rejected" : "Pending"}
-                    </div>
+                    {sortMode === "name" ? "A-Z" : sortMode === "status" ? "STS" : "FND"}
                   </button>
-                )
-              })}
+                </div>
+              </div>
+
+              {isReviewThinking && (
+                <div className="mx-2 mb-1 h-1 rounded-full bg-terminal-blue/20 overflow-hidden">
+                  <div className="h-full w-1/3 bg-terminal-blue rounded-full animate-pulse" style={{ animation: "pulse 1.5s ease-in-out infinite, slideRight 2s ease-in-out infinite" }} />
+                </div>
+              )}
+
+              {isReviewComplete && !isReviewThinking && (
+                <div className="mx-2 mb-1 px-2 py-1.5 rounded border border-terminal-green/20 bg-terminal-green/5 text-[11px] text-terminal-green flex items-center gap-1.5">
+                  <Check className="w-3 h-3" />
+                  <span>
+                    {reviewSummary.totalFiles} files reviewed
+                    {reviewSummary.totalFindings > 0 && <> | {reviewSummary.totalFindings} finding{reviewSummary.totalFindings > 1 ? "s" : ""}</>}
+                    {reviewSummary.reviewedCount > 0 && <> | {reviewSummary.reviewedCount} auto-approved</>}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+                {displayFiles.map((file) => {
+                  const decision = decisions[file.name] ?? "pending"
+                  const isActive = selectedPath === file.name
+                  const isChecked = selectedPaths.has(file.name)
+                  const findings = findingsCountByFile[file.name] ?? 0
+                  const DecisionIcon = decisionConfig[decision].icon
+
+                  return (
+                    <button
+                      key={file.name}
+                      onClick={() => setSelectedPath(file.name)}
+                      className={`w-full text-left rounded px-2 py-1.5 mb-0.5 border transition-colors ${
+                        isActive
+                          ? "bg-sidebar-accent border-sidebar-accent"
+                          : "border-transparent hover:bg-[#b9bcc01c]"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          role="checkbox"
+                          aria-checked={isChecked}
+                          onClick={(e) => { e.stopPropagation(); toggleFileSelection(file.name) }}
+                          className="flex-shrink-0 cursor-pointer text-muted-foreground hover:text-terminal-fg"
+                        >
+                          {isChecked ? (
+                            <CheckSquare className="w-3.5 h-3.5 text-terminal-blue" />
+                          ) : (
+                            <Square className="w-3.5 h-3.5" />
+                          )}
+                        </span>
+                        <span className={`text-[10px] font-bold w-3 flex-shrink-0 ${statusClass[file.status]}`}>
+                          {statusLabel[file.status]}
+                        </span>
+                        <span className="text-xs text-terminal-fg truncate flex-1 min-w-0">{file.name}</span>
+                        <DecisionIcon className={`w-3 h-3 flex-shrink-0 ${decisionConfig[decision].color}`} />
+                        {findings > 0 && (
+                          <span className="flex-shrink-0 text-[9px] bg-terminal-gold/20 text-terminal-gold px-1 py-0.5 rounded-full leading-none">
+                            {findings}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {selectedPaths.size > 0 && (
+                <div className="border-t border-panel-border px-2 py-2 flex items-center gap-2 bg-panel-bg">
+                  <span className="text-[11px] text-muted-foreground">{selectedPaths.size} selected</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      onClick={batchApprove}
+                      className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-terminal-green/15 text-terminal-green hover:bg-terminal-green/25"
+                    >
+                      <ShieldCheck className="w-3 h-3" />
+                      Approve
+                    </button>
+                    <button
+                      onClick={batchReject}
+                      className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-terminal-red/15 text-terminal-red hover:bg-terminal-red/25"
+                    >
+                      <ShieldAlert className="w-3 h-3" />
+                      Reject
+                    </button>
+                    <button
+                      onClick={batchReset}
+                      className="px-2 py-1 rounded text-[11px] bg-background/50 text-muted-foreground hover:text-terminal-fg"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="min-h-0 flex flex-col">
@@ -424,6 +763,17 @@ export function ReviewMode({
                       {statusLabel[selectedFile.status]}
                     </span>
                     <span className="text-sm text-terminal-fg truncate">{selectedFile.name}</span>
+                    {(() => {
+                      const dec = decisions[selectedFile.name] ?? "pending"
+                      const cfg = decisionConfig[dec]
+                      const Icon = cfg.icon
+                      return (
+                        <span className={`flex items-center gap-1 text-[11px] ${cfg.color}`}>
+                          <Icon className="w-3.5 h-3.5" />
+                          {cfg.label}
+                        </span>
+                      )
+                    })()}
                     <span className="ml-auto text-[10px] text-terminal-green bg-terminal-green/10 px-1.5 py-0.5 rounded">
                       +{selectedDiffStats.additions}
                     </span>
@@ -490,12 +840,18 @@ export function ReviewMode({
                     {expandedComments[selectedFile.name] ? (
                       <textarea
                         value={comments[selectedFile.name] ?? ""}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const nextValue = event.target.value
+                          const autoValue = reviewCommentsByFile[selectedFile.name] ?? ""
                           setComments((previous) => ({
                             ...previous,
-                            [selectedFile.name]: event.target.value,
+                            [selectedFile.name]: nextValue,
                           }))
-                        }
+                          setManualCommentEdits((previous) => ({
+                            ...previous,
+                            [selectedFile.name]: nextValue.trim() !== autoValue.trim(),
+                          }))
+                        }}
                         placeholder="Add review notes for this file..."
                         className="mt-2 w-full min-h-[72px] rounded border border-panel-border bg-background/60 px-2 py-1.5 text-xs text-terminal-fg outline-none focus:border-terminal-blue/40"
                       />
@@ -527,7 +883,18 @@ export function ReviewMode({
           </div>
         )}
 
-        <div className="border-t border-panel-border p-3 flex flex-col gap-2">
+        <div className={`border-t p-3 flex flex-col gap-2 ${
+          isReviewComplete && reviewSummary.pendingCount === 0 && reviewSummary.rejectedCount === 0
+            ? "border-terminal-green/30 bg-terminal-green/5"
+            : "border-panel-border"
+        }`}>
+          {isReviewComplete && reviewSummary.pendingCount === 0 && reviewSummary.rejectedCount === 0 && (
+            <div className="text-[11px] text-terminal-green flex items-center gap-1.5">
+              <CheckCheck className="w-3.5 h-3.5" />
+              All files reviewed. Ready to commit.
+            </div>
+          )}
+
           {pendingApprovals.length > 0 && (
             <div className="text-xs text-muted-foreground bg-background/40 border border-panel-border rounded px-2 py-1.5">
               Pending approvals: {pendingApprovals.length}
@@ -547,7 +914,7 @@ export function ReviewMode({
               className="flex items-center gap-1 rounded px-3 py-1.5 text-xs bg-terminal-green/15 text-terminal-green disabled:opacity-50 disabled:cursor-not-allowed hover:bg-terminal-green/25"
             >
               <Check className="w-3.5 h-3.5" />
-              Commit approved ({approvedPaths.length})
+              Commit ({approvedPaths.length})
             </button>
           </div>
         </div>

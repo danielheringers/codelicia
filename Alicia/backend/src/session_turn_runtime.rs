@@ -54,6 +54,47 @@ fn parse_bridge_response<T: DeserializeOwned>(result: Value, method: &str) -> Re
         .map_err(|error| format!("bridge returned invalid {method} response: {error}"))
 }
 
+fn validate_review_target(target: Option<&Value>) -> Result<(), String> {
+    let Some(target) = target else {
+        return Ok(());
+    };
+
+    let Some(target_object) = target.as_object() else {
+        return Err("target must be a plain JSON object".to_string());
+    };
+
+    let is_files_target = target_object
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|target_type| target_type == "files");
+    if !is_files_target {
+        return Ok(());
+    }
+
+    let Some(paths) = target_object.get("paths").and_then(Value::as_array) else {
+        return Err("target.paths must be a non-empty array when target.type is `files`".to_string());
+    };
+
+    if paths.is_empty() {
+        return Err("target.paths must be a non-empty array when target.type is `files`".to_string());
+    }
+
+    for (index, path) in paths.iter().enumerate() {
+        let Some(path) = path.as_str() else {
+            return Err(format!(
+                "target.paths[{index}] must be a non-empty string when target.type is `files`"
+            ));
+        };
+
+        if path.trim().is_empty() {
+            return Err(format!(
+                "target.paths[{index}] must be a non-empty string when target.type is `files`"
+            ));
+        }
+    }
+
+    Ok(())
+}
 
 fn is_unsupported_method_message(error: &str) -> bool {
     let normalized = error.to_ascii_lowercase();
@@ -401,13 +442,7 @@ pub(crate) async fn codex_review_start_impl(
     state: State<'_, AppState>,
     request: CodexReviewStartRequest,
 ) -> Result<CodexReviewStartResponse, String> {
-    if request
-        .target
-        .as_ref()
-        .is_some_and(|target| !target.is_object())
-    {
-        return Err("target must be a plain JSON object".to_string());
-    }
+    validate_review_target(request.target.as_ref())?;
 
     if let Some(delivery) = request.delivery.as_ref() {
         let normalized = delivery.trim().to_ascii_lowercase();
@@ -973,3 +1008,59 @@ pub(crate) async fn send_codex_input_impl(
     Ok(())
 }
 
+
+
+#[cfg(test)]
+mod tests {
+    use super::validate_review_target;
+    use serde_json::json;
+
+    #[test]
+    fn validate_review_target_rejects_non_object_target() {
+        let result = validate_review_target(Some(&json!("invalid")));
+        assert_eq!(
+            result,
+            Err("target must be a plain JSON object".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_review_target_keeps_existing_target_types_unchanged() {
+        let result = validate_review_target(Some(&json!({
+            "type": "uncommittedChanges"
+        })));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_review_target_requires_paths_for_files_target() {
+        let result = validate_review_target(Some(&json!({ "type": "files" })));
+        assert_eq!(
+            result,
+            Err("target.paths must be a non-empty array when target.type is `files`".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_review_target_requires_non_empty_trimmed_path_values() {
+        let result = validate_review_target(Some(&json!({
+            "type": "files",
+            "paths": ["src/main.rs", "   "]
+        })));
+        assert_eq!(
+            result,
+            Err(
+                "target.paths[1] must be a non-empty string when target.type is `files`".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn validate_review_target_accepts_files_target_with_paths() {
+        let result = validate_review_target(Some(&json!({
+            "type": "files",
+            "paths": ["src/main.rs", "src/session_turn_runtime.rs"]
+        })));
+        assert!(result.is_ok());
+    }
+}

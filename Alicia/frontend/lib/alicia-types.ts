@@ -152,6 +152,7 @@ export const SUPPORTED_SLASH_COMMANDS: SlashCommand[] = [
   { command: "/fork", label: "Fork", description: "Fork current or previous session", category: "session", support: "supported" },
   { command: "/agent", label: "Agent", description: "Switch agent mode", category: "agent", support: "supported" },
   { command: "/review", label: "Review", description: "Request code review", category: "agent", support: "supported" },
+  { command: "/review-file", label: "Review File", description: "Request review for selected file", category: "agent", support: "supported" },
   { command: "/diff", label: "Diff", description: "Show current changes diff", category: "agent", support: "supported" },
   { command: "/mcp", label: "MCP", description: "View MCP server status and tools", category: "debug", support: "supported" },
   { command: "/apps", label: "Apps", description: "Manage connected apps", category: "debug", support: "supported" },
@@ -188,6 +189,7 @@ export type SlashCommandSupportState = SlashCommand["support"] | "unsupported"
 
 const SLASH_COMMAND_METHOD_REQUIREMENTS: Partial<Record<string, RuntimeMethod[]>> = {
   "/review": ["review.start"],
+  "/review-file": ["review.start"],
 }
 
 export function getSlashCommandDefinition(command: string): SlashCommand | null {

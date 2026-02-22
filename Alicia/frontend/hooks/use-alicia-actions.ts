@@ -111,9 +111,28 @@ interface ParsedReviewSlash {
   delivery?: ReviewDelivery | null
 }
 
+function decodeEscapedToken(token: string): string {
+  return token.replace(/\\(["'\\])/g, "$1")
+}
+
+function tokenizeSlashArgs(argsRaw: string): string[] {
+  const tokens: string[] = []
+  const pattern = /"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|(\S+)/g
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(argsRaw)) !== null) {
+    const token = match[1] ?? match[2] ?? match[3] ?? ""
+    if (!token) {
+      continue
+    }
+    tokens.push(decodeEscapedToken(token))
+  }
+
+  return tokens
+}
+
 function parseReviewSlashArgs(argsRaw: string): ParsedReviewSlash {
-  const tokens = argsRaw
-    .split(/\s+/)
+  const tokens = tokenizeSlashArgs(argsRaw)
     .map((token) => token.trim())
     .filter((token) => token.length > 0)
 
@@ -191,6 +210,38 @@ function parseReviewSlashArgs(argsRaw: string): ParsedReviewSlash {
 
   return {
     target: { type: "custom", instructions: args },
+    delivery,
+  }
+}
+
+function parseReviewFileSlashArgs(argsRaw: string): ParsedReviewSlash {
+  const tokens = tokenizeSlashArgs(argsRaw)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+
+  let delivery: ReviewDelivery | null | undefined
+  const pathTokens: string[] = []
+
+  for (const token of tokens) {
+    const lowered = token.toLowerCase()
+    if (lowered === "--detached") {
+      delivery = "detached"
+      continue
+    }
+    if (lowered === "--inline") {
+      delivery = "inline"
+      continue
+    }
+    pathTokens.push(token)
+  }
+
+  const selectedPath = pathTokens.join(" ").trim()
+  if (!selectedPath) {
+    throw new Error("select a file first to run /review-file")
+  }
+
+  return {
+    target: { type: "files", paths: [selectedPath] },
     delivery,
   }
 }
@@ -398,7 +449,7 @@ export function useAliciaActions({
         }
         return
       }
-      if (normalizedName === "/review") {
+      if (normalizedName === "/review" || normalizedName === "/review-file") {
         setAliciaState((prev) => ({ ...prev, activePanel: "review" }))
         await refreshWorkspaceChanges()
 
@@ -408,9 +459,14 @@ export function useAliciaActions({
 
         reviewRoutingRef.current = false
 
+        const slashCommandLabel = normalizedName === "/review-file" ? "/review-file" : "/review"
+
         let parsedReview: ParsedReviewSlash
         try {
-          parsedReview = parseReviewSlashArgs(args)
+          parsedReview =
+            normalizedName === "/review-file"
+              ? parseReviewFileSlashArgs(args)
+              : parseReviewSlashArgs(args)
         } catch (error) {
           addMessage("system", `[review] ${String(error)}`, "review")
           return
@@ -419,7 +475,7 @@ export function useAliciaActions({
         if (!supportsRuntimeMethod("review.start")) {
           addMessage(
             "system",
-            "[slash] /review is not supported by current runtime (missing review.start)",
+            `[slash] ${slashCommandLabel} is not supported by current runtime (missing review.start)`,
             "review",
           )
           return
@@ -455,7 +511,7 @@ export function useAliciaActions({
             markUnsupportedRuntimeMethod("review.start")
             addMessage(
               "system",
-              "[slash] /review is not supported by current runtime (missing review.start)",
+              `[slash] ${slashCommandLabel} is not supported by current runtime (missing review.start)`,
               "review",
             )
             return

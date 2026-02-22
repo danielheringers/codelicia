@@ -1424,12 +1424,36 @@ struct BootStage {
 }
 
 const BOOT_STAGES: &[BootStage] = &[
-    BootStage { label: "Loading configuration", detail: "~/.config/alicia/config.toml", threshold: 0.08 },
-    BootStage { label: "Setting up workspace", detail: "~/projects/my-app", threshold: 0.20 },
-    BootStage { label: "Connecting MCP servers", detail: "6 servers", threshold: 0.45 },
-    BootStage { label: "Validating API credentials", detail: "verified", threshold: 0.65 },
-    BootStage { label: "Initializing sandbox", detail: "ready", threshold: 0.82 },
-    BootStage { label: "System ready", detail: "Alicia v0.1.0-alpha", threshold: 0.95 },
+    BootStage {
+        label: "Loading configuration",
+        detail: "~/.config/alicia/config.toml",
+        threshold: 0.08,
+    },
+    BootStage {
+        label: "Setting up workspace",
+        detail: "~/projects/my-app",
+        threshold: 0.20,
+    },
+    BootStage {
+        label: "Connecting MCP servers",
+        detail: "6 servers",
+        threshold: 0.45,
+    },
+    BootStage {
+        label: "Validating API credentials",
+        detail: "verified",
+        threshold: 0.65,
+    },
+    BootStage {
+        label: "Initializing sandbox",
+        detail: "ready",
+        threshold: 0.82,
+    },
+    BootStage {
+        label: "System ready",
+        detail: "Alicia v0.1.0-alpha",
+        threshold: 0.95,
+    },
 ];
 
 #[derive(Debug)]
@@ -1495,12 +1519,10 @@ impl AliciaEguiView {
                         ui.horizontal(|ui| {
                             // Traffic light buttons
                             ui.label(
-                                egui::RichText::new("\u{25CF}")
-                                    .color(alicia_color_terminal_red()),
+                                egui::RichText::new("\u{25CF}").color(alicia_color_terminal_red()),
                             );
                             ui.label(
-                                egui::RichText::new("\u{25CF}")
-                                    .color(alicia_color_terminal_gold()),
+                                egui::RichText::new("\u{25CF}").color(alicia_color_terminal_gold()),
                             );
                             ui.label(
                                 egui::RichText::new("\u{25CF}")
@@ -1645,9 +1667,11 @@ impl AliciaEguiView {
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
                                             ui.label(
-                                                egui::RichText::new(
-                                                    if *is_active { "\u{25CF}" } else { "\u{25CB}" },
-                                                )
+                                                egui::RichText::new(if *is_active {
+                                                    "\u{25CF}"
+                                                } else {
+                                                    "\u{25CB}"
+                                                })
                                                 .monospace()
                                                 .small()
                                                 .color(if *is_active {
@@ -1788,9 +1812,7 @@ impl AliciaEguiView {
                             for file in &changed_files {
                                 ui.horizontal(|ui| {
                                     egui::Frame::new()
-                                        .fill(
-                                            alicia_color_terminal_gold().gamma_multiply(0.15),
-                                        )
+                                        .fill(alicia_color_terminal_gold().gamma_multiply(0.15))
                                         .corner_radius(egui::CornerRadius::same(3))
                                         .inner_margin(egui::Margin::symmetric(4, 1))
                                         .show(ui, |ui| {
@@ -2144,9 +2166,7 @@ impl AliciaEguiView {
                                     ui.label(
                                         egui::RichText::new(format!(
                                             "sandbox: {}",
-                                            permission_profile_name(
-                                                store.permission_profile()
-                                            )
+                                            permission_profile_name(store.permission_profile())
                                         ))
                                         .monospace()
                                         .small()
@@ -2308,31 +2328,26 @@ impl AliciaEguiView {
                                         .color(alicia_color_terminal_green()),
                                 );
                                 let response = ui.add(
-                                    egui::TextEdit::multiline(
-                                        &mut self.terminal_input_buffer,
-                                    )
-                                    .font(egui::TextStyle::Monospace)
-                                    .desired_rows(2)
-                                    .hint_text("Ask Alicia anything..."),
+                                    egui::TextEdit::multiline(&mut self.terminal_input_buffer)
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_rows(2)
+                                        .hint_text("Ask Alicia anything..."),
                                 );
 
                                 let enter_pressed =
                                     ui.input(|input| input.key_pressed(egui::Key::Enter));
-                                let shift_pressed =
-                                    ui.input(|input| input.modifiers.shift);
+                                let shift_pressed = ui.input(|input| input.modifiers.shift);
 
                                 // Send button
-                                let send_enabled =
-                                    !self.terminal_input_buffer.trim().is_empty();
+                                let send_enabled = !self.terminal_input_buffer.trim().is_empty();
                                 let send_button = egui::Button::new(
-                                    egui::RichText::new("^")
-                                        .monospace()
-                                        .strong()
-                                        .color(if send_enabled {
+                                    egui::RichText::new("^").monospace().strong().color(
+                                        if send_enabled {
                                             alicia_color_terminal_bg()
                                         } else {
                                             alicia_color_terminal_comment()
-                                        }),
+                                        },
+                                    ),
                                 )
                                 .fill(if send_enabled {
                                     alicia_color_terminal_green()
@@ -2342,10 +2357,7 @@ impl AliciaEguiView {
                                 .corner_radius(egui::CornerRadius::same(6));
 
                                 let mut should_send = ui.add(send_button).clicked();
-                                if response.has_focus()
-                                    && enter_pressed
-                                    && !shift_pressed
-                                {
+                                if response.has_focus() && enter_pressed && !shift_pressed {
                                     should_send = true;
                                 }
                                 if should_send {
@@ -2439,16 +2451,13 @@ impl AliciaEguiView {
                     // Top bar replica
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new("\u{25CF}")
-                                .color(alicia_color_terminal_red()),
+                            egui::RichText::new("\u{25CF}").color(alicia_color_terminal_red()),
                         );
                         ui.label(
-                            egui::RichText::new("\u{25CF}")
-                                .color(alicia_color_terminal_gold()),
+                            egui::RichText::new("\u{25CF}").color(alicia_color_terminal_gold()),
                         );
                         ui.label(
-                            egui::RichText::new("\u{25CF}")
-                                .color(alicia_color_terminal_green()),
+                            egui::RichText::new("\u{25CF}").color(alicia_color_terminal_green()),
                         );
                     });
 
@@ -2464,11 +2473,9 @@ impl AliciaEguiView {
                     }
                     ui.add_space(4.0);
                     ui.label(
-                        egui::RichText::new(format!(
-                            "  {ALICIA_UI_VERSION}  |  AI Terminal Agent"
-                        ))
-                        .monospace()
-                        .color(alicia_color_terminal_comment()),
+                        egui::RichText::new(format!("  {ALICIA_UI_VERSION}  |  AI Terminal Agent"))
+                            .monospace()
+                            .color(alicia_color_terminal_comment()),
                     );
 
                     ui.add_space(20.0);
@@ -2476,8 +2483,7 @@ impl AliciaEguiView {
                     // Boot stages
                     for stage in BOOT_STAGES {
                         let done = progress >= stage.threshold;
-                        let active = !done
-                            && progress >= (stage.threshold - 0.12_f32).max(0.0);
+                        let active = !done && progress >= (stage.threshold - 0.12_f32).max(0.0);
                         ui.horizontal(|ui| {
                             let (indicator, color) = if done {
                                 ("\u{2713}", alicia_color_terminal_green())
@@ -2486,20 +2492,14 @@ impl AliciaEguiView {
                             } else {
                                 (".", alicia_color_terminal_comment())
                             };
-                            ui.label(
-                                egui::RichText::new(indicator)
-                                    .monospace()
-                                    .color(color),
-                            );
-                            ui.label(
-                                egui::RichText::new(stage.label)
-                                    .monospace()
-                                    .color(if done || active {
-                                        alicia_color_terminal_fg()
-                                    } else {
-                                        alicia_color_terminal_comment()
-                                    }),
-                            );
+                            ui.label(egui::RichText::new(indicator).monospace().color(color));
+                            ui.label(egui::RichText::new(stage.label).monospace().color(
+                                if done || active {
+                                    alicia_color_terminal_fg()
+                                } else {
+                                    alicia_color_terminal_comment()
+                                },
+                            ));
                             if done || active {
                                 ui.label(
                                     egui::RichText::new(stage.detail)
@@ -2623,12 +2623,7 @@ fn render_badge(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
         .corner_radius(egui::CornerRadius::same(10))
         .inner_margin(egui::Margin::symmetric(8, 3))
         .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(text)
-                    .monospace()
-                    .small()
-                    .color(color),
-            );
+            ui.label(egui::RichText::new(text).monospace().small().color(color));
         });
 }
 
@@ -2768,13 +2763,10 @@ fn render_chat_message(ui: &mut egui::Ui, msg: &DemoChatMessage) {
                                         .color(alicia_color_terminal_comment()),
                                 );
                                 ui.label(
-                                    egui::RichText::new(format!(
-                                        "{}: {}",
-                                        tool.name, tool.detail
-                                    ))
-                                    .monospace()
-                                    .small()
-                                    .color(alicia_color_terminal_fg()),
+                                    egui::RichText::new(format!("{}: {}", tool.name, tool.detail))
+                                        .monospace()
+                                        .small()
+                                        .color(alicia_color_terminal_fg()),
                                 );
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
@@ -2825,12 +2817,9 @@ fn render_demo_code_block(ui: &mut egui::Ui, block: &DemoCodeBlock) {
                                 .small()
                                 .color(alicia_color_terminal_fg()),
                         );
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                render_badge(ui, block.language, alicia_color_terminal_cyan());
-                            },
-                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            render_badge(ui, block.language, alicia_color_terminal_cyan());
+                        });
                     });
                 });
             // Code content with line numbers
@@ -2873,12 +2862,7 @@ fn render_syntax_line(ui: &mut egui::Ui, line: &str) {
     } else {
         alicia_color_terminal_fg()
     };
-    ui.label(
-        egui::RichText::new(line)
-            .monospace()
-            .small()
-            .color(color),
-    );
+    ui.label(egui::RichText::new(line).monospace().small().color(color));
 }
 
 fn render_demo_diff_block(ui: &mut egui::Ui, diff: &DemoDiff) {
@@ -2912,23 +2896,20 @@ fn render_demo_diff_block(ui: &mut egui::Ui, diff: &DemoDiff) {
                                 .monospace()
                                 .color(alicia_color_terminal_red()),
                         );
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                let _ = ui.button(
-                                    egui::RichText::new("Reject")
-                                        .monospace()
-                                        .small()
-                                        .color(alicia_color_terminal_red()),
-                                );
-                                let _ = ui.button(
-                                    egui::RichText::new("Apply")
-                                        .monospace()
-                                        .small()
-                                        .color(alicia_color_terminal_green()),
-                                );
-                            },
-                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let _ = ui.button(
+                                egui::RichText::new("Reject")
+                                    .monospace()
+                                    .small()
+                                    .color(alicia_color_terminal_red()),
+                            );
+                            let _ = ui.button(
+                                egui::RichText::new("Apply")
+                                    .monospace()
+                                    .small()
+                                    .color(alicia_color_terminal_green()),
+                            );
+                        });
                     });
                 });
             // Diff lines
@@ -2945,23 +2926,13 @@ fn render_demo_diff_block(ui: &mut egui::Ui, diff: &DemoDiff) {
                                         .color(alicia_color_terminal_comment()),
                                 );
                             } else {
-                                ui.label(
-                                    egui::RichText::new("   ")
-                                        .monospace()
-                                        .small(),
-                                );
+                                ui.label(egui::RichText::new("   ").monospace().small());
                             }
                             ui.add_space(4.0);
                             let (indicator, color) = match line.line_type {
-                                DemoDiffLineType::Add => {
-                                    ("+", alicia_color_terminal_green())
-                                }
-                                DemoDiffLineType::Remove => {
-                                    ("-", alicia_color_terminal_red())
-                                }
-                                DemoDiffLineType::Context => {
-                                    (" ", alicia_color_terminal_comment())
-                                }
+                                DemoDiffLineType::Add => ("+", alicia_color_terminal_green()),
+                                DemoDiffLineType::Remove => ("-", alicia_color_terminal_red()),
+                                DemoDiffLineType::Context => (" ", alicia_color_terminal_comment()),
                             };
                             ui.label(
                                 egui::RichText::new(indicator)
@@ -3004,10 +2975,26 @@ fn build_demo_messages() -> Vec<DemoChatMessage> {
             content: "I'll refactor the authentication system to use JWT tokens. Let me first analyze the current codebase to understand the existing auth implementation.",
             timestamp: "09:41:16",
             tool_calls: vec![
-                DemoToolCall { icon: "Q", name: "Search", detail: "auth handler src/auth/" },
-                DemoToolCall { icon: ">_", name: "Read", detail: "src/auth/handler.rs" },
-                DemoToolCall { icon: ">_", name: "Read", detail: "src/auth/middleware.rs" },
-                DemoToolCall { icon: "Q", name: "Search", detail: "session references 12 files found" },
+                DemoToolCall {
+                    icon: "Q",
+                    name: "Search",
+                    detail: "auth handler src/auth/",
+                },
+                DemoToolCall {
+                    icon: ">_",
+                    name: "Read",
+                    detail: "src/auth/handler.rs",
+                },
+                DemoToolCall {
+                    icon: ">_",
+                    name: "Read",
+                    detail: "src/auth/middleware.rs",
+                },
+                DemoToolCall {
+                    icon: "Q",
+                    name: "Search",
+                    detail: "session references 12 files found",
+                },
             ],
             code_blocks: vec![],
             diff: None,
@@ -3035,23 +3022,91 @@ fn build_demo_messages() -> Vec<DemoChatMessage> {
                 added: 7,
                 removed: 3,
                 lines: vec![
-                    DemoDiffLine { line_type: DemoDiffLineType::Context, content: "  use actix_web::{HttpRequest, HttpResponse};", line_number: Some(1) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Remove, content: "  use crate::session::SessionStore;", line_number: Some(2) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Add, content: "  use crate::auth::token::{verify_token, Claims};", line_number: Some(2) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Add, content: "  use actix_web::HttpMessage;", line_number: Some(3) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Context, content: "", line_number: Some(4) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Context, content: "  pub async fn auth_middleware(", line_number: Some(5) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Context, content: "      req: HttpRequest,", line_number: Some(6) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Remove, content: "      session: SessionStore,", line_number: Some(7) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Add, content: "  ) -> Result<HttpResponse, AuthError> {", line_number: Some(7) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Remove, content: "      let session_id = req.cookie(\"session_id\")", line_number: Some(8) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Add, content: "      let token = req.headers()", line_number: Some(8) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Add, content: "          .get(\"Authorization\")", line_number: Some(9) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Add, content: "          .and_then(|v| v.to_str().ok())", line_number: Some(10) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Add, content: "          .and_then(|v| v.strip_prefix(\"Bearer \"))", line_number: Some(11) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Add, content: "          .ok_or(AuthError::MissingToken)?;", line_number: Some(12) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Add, content: "      let claims = verify_token(token)?;", line_number: Some(13) },
-                    DemoDiffLine { line_type: DemoDiffLineType::Add, content: "      req.extensions_mut().insert(claims);", line_number: Some(14) },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Context,
+                        content: "  use actix_web::{HttpRequest, HttpResponse};",
+                        line_number: Some(1),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Remove,
+                        content: "  use crate::session::SessionStore;",
+                        line_number: Some(2),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Add,
+                        content: "  use crate::auth::token::{verify_token, Claims};",
+                        line_number: Some(2),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Add,
+                        content: "  use actix_web::HttpMessage;",
+                        line_number: Some(3),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Context,
+                        content: "",
+                        line_number: Some(4),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Context,
+                        content: "  pub async fn auth_middleware(",
+                        line_number: Some(5),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Context,
+                        content: "      req: HttpRequest,",
+                        line_number: Some(6),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Remove,
+                        content: "      session: SessionStore,",
+                        line_number: Some(7),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Add,
+                        content: "  ) -> Result<HttpResponse, AuthError> {",
+                        line_number: Some(7),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Remove,
+                        content: "      let session_id = req.cookie(\"session_id\")",
+                        line_number: Some(8),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Add,
+                        content: "      let token = req.headers()",
+                        line_number: Some(8),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Add,
+                        content: "          .get(\"Authorization\")",
+                        line_number: Some(9),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Add,
+                        content: "          .and_then(|v| v.to_str().ok())",
+                        line_number: Some(10),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Add,
+                        content: "          .and_then(|v| v.strip_prefix(\"Bearer \"))",
+                        line_number: Some(11),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Add,
+                        content: "          .ok_or(AuthError::MissingToken)?;",
+                        line_number: Some(12),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Add,
+                        content: "      let claims = verify_token(token)?;",
+                        line_number: Some(13),
+                    },
+                    DemoDiffLine {
+                        line_type: DemoDiffLineType::Add,
+                        content: "      req.extensions_mut().insert(claims);",
+                        line_number: Some(14),
+                    },
                 ],
             }),
         },

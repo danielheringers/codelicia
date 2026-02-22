@@ -1,7 +1,8 @@
 {
-  "name": "codex-monorepo",
+  "name": "neurocoder",
+  "version": "0.1.0",
   "private": true,
-  "description": "Tools for repo-wide maintenance.",
+  "description": "ide for abap and sap products development.",
   "scripts": {
     "format": "prettier --check *.json *.md docs/*.md .github/workflows/*.yml **/*.js",
     "format:fix": "prettier --write *.json *.md docs/*.md .github/workflows/*.yml **/*.js"

@@ -2946,6 +2946,32 @@ function normalizeReviewTarget(value) {
     return { type: "commit", sha, title };
   }
 
+  if (targetType === "files") {
+    if (!Array.isArray(value.paths) || value.paths.length === 0) {
+      throw new Error("review target files requires non-empty `paths`");
+    }
+
+    const seen = new Set();
+    const paths = [];
+    for (const entry of value.paths) {
+      if (typeof entry !== "string") {
+        throw new Error("review target files requires `paths` as string[]");
+      }
+
+      const trimmed = entry.trim();
+      if (!trimmed) {
+        throw new Error("review target files requires non-empty path strings");
+      }
+
+      if (!seen.has(trimmed)) {
+        seen.add(trimmed);
+        paths.push(trimmed);
+      }
+    }
+
+    return { type: "files", paths };
+  }
+
   if (targetType === "custom") {
     const instructions = String(value.instructions || "").trim();
     if (!instructions) {
@@ -4213,4 +4239,5 @@ main().catch((error) => {
   });
   process.exit(1);
 });
+
 

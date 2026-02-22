@@ -2030,6 +2030,11 @@ pub enum ReviewTarget {
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     Custom { instructions: String },
+
+    /// Review only the listed file paths.
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    Files { paths: Vec<String> },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
