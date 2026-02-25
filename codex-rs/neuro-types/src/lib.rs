@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -145,6 +146,43 @@ pub struct RuntimeDiagnoseComponent {
     pub latency_ms: Option<u64>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiagnoseComponentNameGuardError {
+    pub component: String,
+    pub blocked_token: &'static str,
+}
+
+impl fmt::Display for DiagnoseComponentNameGuardError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "diagnose component `{}` contains blocked legacy token `{}`",
+            self.component, self.blocked_token
+        )
+    }
+}
+
+impl std::error::Error for DiagnoseComponentNameGuardError {}
+
+impl RuntimeDiagnoseComponent {
+    pub fn try_new(
+        component: impl Into<String>,
+        status: DiagnoseStatus,
+        detail: impl Into<String>,
+        latency_ms: Option<u64>,
+    ) -> Result<Self, DiagnoseComponentNameGuardError> {
+        let component = component.into();
+        validate_diagnose_component_name(component.as_str())?;
+
+        Ok(Self {
+            component,
+            status,
+            detail: detail.into(),
+            latency_ms,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RuntimeDiagnoseResponse {
     pub timestamp_epoch_secs: u64,
@@ -152,6 +190,35 @@ pub struct RuntimeDiagnoseResponse {
     pub components: Vec<RuntimeDiagnoseComponent>,
     #[serde(default)]
     pub metadata: BTreeMap<String, Value>,
+}
+
+impl RuntimeDiagnoseResponse {
+    pub fn validate_component_names(&self) -> Result<(), DiagnoseComponentNameGuardError> {
+        self.components.iter().try_for_each(|component| {
+            validate_diagnose_component_name(component.component.as_str())
+        })
+    }
+}
+
+const LEGACY_DIAGNOSE_COMPONENT_TOKEN: &str = "vsp";
+
+pub fn is_legacy_diagnose_component_name(component: &str) -> bool {
+    component
+        .to_ascii_lowercase()
+        .contains(LEGACY_DIAGNOSE_COMPONENT_TOKEN)
+}
+
+pub fn validate_diagnose_component_name(
+    component: &str,
+) -> Result<(), DiagnoseComponentNameGuardError> {
+    if is_legacy_diagnose_component_name(component) {
+        Err(DiagnoseComponentNameGuardError {
+            component: component.to_owned(),
+            blocked_token: LEGACY_DIAGNOSE_COMPONENT_TOKEN,
+        })
+    } else {
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -226,4 +293,74 @@ fn default_search_path() -> String {
 
 const fn default_ws_timeout_secs() -> u64 {
     15
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_component_name_detection_is_case_insensitive() {
+        assert!(is_legacy_diagnose_component_name("vsp_ws"));
+        assert!(is_legacy_diagnose_component_name("VSP"));
+        assert!(is_legacy_diagnose_component_name("NeuroVspHealth"));
+        assert!(!is_legacy_diagnose_component_name("neuro_ws"));
+    }
+
+    #[test]
+    fn runtime_diagnose_component_constructor_rejects_legacy_name() {
+        let result = RuntimeDiagnoseComponent::try_new(
+            "vsp_ws",
+            DiagnoseStatus::Healthy,
+            "legacy component",
+            None,
+        );
+
+        let error = match result {
+            Ok(component) => panic!(
+                "expected guard error, got component {}",
+                component.component
+            ),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error,
+            DiagnoseComponentNameGuardError {
+                component: "vsp_ws".to_owned(),
+                blocked_token: LEGACY_DIAGNOSE_COMPONENT_TOKEN,
+            }
+        );
+    }
+
+    #[test]
+    fn runtime_diagnose_response_validator_accepts_guarded_names() {
+        let adt_component = match RuntimeDiagnoseComponent::try_new(
+            "adt_http",
+            DiagnoseStatus::Healthy,
+            "ok",
+            Some(7),
+        ) {
+            Ok(component) => component,
+            Err(error) => panic!("unexpected guard error: {error}"),
+        };
+        let ws_component = match RuntimeDiagnoseComponent::try_new(
+            "neuro_ws",
+            DiagnoseStatus::Unavailable,
+            "not configured",
+            None,
+        ) {
+            Ok(component) => component,
+            Err(error) => panic!("unexpected guard error: {error}"),
+        };
+
+        let response = RuntimeDiagnoseResponse {
+            timestamp_epoch_secs: 0,
+            overall_status: DiagnoseStatus::Healthy,
+            components: vec![adt_component, ws_component],
+            metadata: BTreeMap::new(),
+        };
+
+        assert_eq!(response.validate_component_names(), Ok(()));
+    }
 }

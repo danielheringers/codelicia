@@ -90,54 +90,54 @@ impl NeuroEngine {
         let adt_latency_ms = u64::try_from(adt_started.elapsed().as_millis()).ok();
 
         let mut components = vec![match adt_ping {
-            Ok(()) => RuntimeDiagnoseComponent {
-                component: "adt_http".to_owned(),
-                status: DiagnoseStatus::Healthy,
-                detail: "ADT HTTP endpoint reachable".to_owned(),
-                latency_ms: adt_latency_ms,
-            },
-            Err(error) => RuntimeDiagnoseComponent {
-                component: "adt_http".to_owned(),
-                status: DiagnoseStatus::Degraded,
-                detail: error.to_string(),
-                latency_ms: adt_latency_ms,
-            },
+            Ok(()) => guarded_runtime_diagnose_component(
+                "adt_http",
+                DiagnoseStatus::Healthy,
+                "ADT HTTP endpoint reachable",
+                adt_latency_ms,
+            ),
+            Err(error) => guarded_runtime_diagnose_component(
+                "adt_http",
+                DiagnoseStatus::Degraded,
+                error.to_string(),
+                adt_latency_ms,
+            ),
         }];
 
         let ws_component = match &self.ws {
-            Some(client) if client.is_connected() => RuntimeDiagnoseComponent {
-                component: "neuro_ws".to_owned(),
-                status: DiagnoseStatus::Healthy,
-                detail: "WebSocket channel is connected".to_owned(),
-                latency_ms: None,
-            },
-            Some(_) => RuntimeDiagnoseComponent {
-                component: "neuro_ws".to_owned(),
-                status: DiagnoseStatus::Degraded,
-                detail: "WebSocket channel exists but is disconnected".to_owned(),
-                latency_ms: None,
-            },
-            None => RuntimeDiagnoseComponent {
-                component: "neuro_ws".to_owned(),
-                status: DiagnoseStatus::Unavailable,
-                detail: "WebSocket is not configured".to_owned(),
-                latency_ms: None,
-            },
+            Some(client) if client.is_connected() => guarded_runtime_diagnose_component(
+                "neuro_ws",
+                DiagnoseStatus::Healthy,
+                "WebSocket channel is connected",
+                None,
+            ),
+            Some(_) => guarded_runtime_diagnose_component(
+                "neuro_ws",
+                DiagnoseStatus::Degraded,
+                "WebSocket channel exists but is disconnected",
+                None,
+            ),
+            None => guarded_runtime_diagnose_component(
+                "neuro_ws",
+                DiagnoseStatus::Unavailable,
+                "WebSocket is not configured",
+                None,
+            ),
         };
         components.push(ws_component);
 
-        components.push(RuntimeDiagnoseComponent {
-            component: "safety_policy".to_owned(),
-            status: DiagnoseStatus::Healthy,
-            detail: format!(
+        components.push(guarded_runtime_diagnose_component(
+            "safety_policy",
+            DiagnoseStatus::Healthy,
+            format!(
                 "read_only={}, blocked_patterns={}, domain_whitelist={}, require_etag_for_updates={}",
                 self.safety.read_only,
                 self.safety.blocked_source_patterns.len(),
                 self.safety.allowed_ws_domains.len(),
                 self.safety.require_etag_for_updates
             ),
-            latency_ms: None,
-        });
+            None,
+        ));
 
         let overall_status =
             components
@@ -170,12 +170,14 @@ impl NeuroEngine {
             json!(self.safety.require_etag_for_updates),
         );
 
-        RuntimeDiagnoseResponse {
+        let report = RuntimeDiagnoseResponse {
             timestamp_epoch_secs,
             overall_status,
             components,
             metadata,
-        }
+        };
+        debug_assert!(report.validate_component_names().is_ok());
+        report
     }
 
     fn enforce_source_update_policy(
@@ -229,10 +231,28 @@ impl NeuroEngine {
     }
 }
 
+fn guarded_runtime_diagnose_component(
+    component: &str,
+    status: DiagnoseStatus,
+    detail: impl Into<String>,
+    latency_ms: Option<u64>,
+) -> RuntimeDiagnoseComponent {
+    match RuntimeDiagnoseComponent::try_new(component, status, detail, latency_ms) {
+        Ok(component) => component,
+        Err(error) => RuntimeDiagnoseComponent {
+            component: "diagnose_naming_guard".to_owned(),
+            status: DiagnoseStatus::Unavailable,
+            detail: error.to_string(),
+            latency_ms: None,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use neuro_types::{AdtAuth, AdtHttpConfig, AdtHttpEndpoints};
+    use std::env;
 
     fn build_engine_with_policy(safety: neuro_types::SafetyPolicy) -> NeuroEngine {
         let adt = AdtClient::new(AdtHttpConfig {
@@ -315,6 +335,7 @@ mod tests {
         });
 
         let report = engine.diagnose().await;
+        assert_eq!(report.validate_component_names(), Ok(()));
         assert!(
             report
                 .components
@@ -326,6 +347,82 @@ mod tests {
                 .components
                 .iter()
                 .any(|component| component.component == "neuro_ws")
+        );
+    }
+
+    #[test]
+    fn diagnose_component_guard_blocks_legacy_name() {
+        let component = guarded_runtime_diagnose_component(
+            "vsp_ws",
+            DiagnoseStatus::Healthy,
+            "legacy name",
+            Some(4),
+        );
+
+        assert_eq!(component.component, "diagnose_naming_guard");
+        assert_eq!(component.status, DiagnoseStatus::Unavailable);
+        assert_eq!(
+            component.detail,
+            "diagnose component `vsp_ws` contains blocked legacy token `vsp`"
+        );
+        assert_eq!(component.latency_ms, None);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires real ADT provider env/secrets"]
+    async fn real_provider_smoke_diagnose_reports_healthy_adt() {
+        let base_url = match env::var("NEURO_SMOKE_ADT_BASE_URL") {
+            Ok(value) if !value.is_empty() => value,
+            _ => return,
+        };
+
+        let auth = match (
+            env::var("NEURO_SMOKE_ADT_USERNAME").ok(),
+            env::var("NEURO_SMOKE_ADT_PASSWORD").ok(),
+            env::var("NEURO_SMOKE_ADT_COOKIE").ok(),
+        ) {
+            (Some(username), Some(password), _) => AdtAuth::Basic { username, password },
+            (_, _, Some(cookie)) => AdtAuth::Cookie { cookie },
+            _ => return,
+        };
+
+        let config = NeuroEngineConfig {
+            adt: AdtHttpConfig {
+                base_url,
+                auth,
+                timeout_secs: env::var("NEURO_SMOKE_ADT_TIMEOUT_SECS")
+                    .ok()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .unwrap_or(30),
+                csrf_fetch_path: env::var("NEURO_SMOKE_ADT_CSRF_FETCH_PATH")
+                    .unwrap_or_else(|_| "/sap/bc/adt".to_owned()),
+                endpoints: AdtHttpEndpoints {
+                    search_objects_path: env::var("NEURO_SMOKE_ADT_SEARCH_PATH")
+                        .unwrap_or_else(|_| "/sap/bc/adt/discovery/search".to_owned()),
+                },
+                insecure_tls: env::var("NEURO_SMOKE_ADT_INSECURE_TLS")
+                    .ok()
+                    .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true")),
+                sap_client: env::var("NEURO_SMOKE_ADT_SAP_CLIENT").ok(),
+                sap_language: env::var("NEURO_SMOKE_ADT_SAP_LANGUAGE").ok(),
+            },
+            ws: None,
+            safety: neuro_types::SafetyPolicy::default(),
+        };
+
+        let engine = NeuroEngine::new(config)
+            .await
+            .expect("real-provider smoke engine should initialize");
+        let report = engine.diagnose().await;
+
+        assert_eq!(report.validate_component_names(), Ok(()));
+        assert_eq!(
+            report
+                .components
+                .iter()
+                .find(|component| component.component == "adt_http")
+                .map(|component| component.status),
+            Some(DiagnoseStatus::Healthy)
         );
     }
 }

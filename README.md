@@ -9,6 +9,48 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 
 ---
 
+## Neuromancer + Alicia Integration
+
+This fork is used as the Rust dependency source for the Alicia desktop app in:
+
+- `../alicia`
+
+The Alicia backend consumes local path dependencies from this repository, especially:
+
+- `codex-rs/core`
+- `codex-rs/protocol`
+- `codex-rs/app-server-protocol`
+- `codex-rs/rmcp-client`
+- `codex-rs/neuro-*`
+
+### Build crates required by Alicia
+
+From `codex/codex-rs`:
+
+```shell
+cargo build -p codex-core -p codex-protocol -p codex-app-server-protocol -p codex-rmcp-client -p neuro-engine -p neuro-types -p neuro-adt-core -p neuro-adt-ws
+```
+
+Recommended validation after changes:
+
+```shell
+cargo test -p neuro-types -p neuro-engine
+```
+
+### Run Alicia with this repository
+
+Keep both repositories as siblings:
+
+```text
+Neuromancer/
+  codex/
+  alicia/
+```
+
+Then follow the run/build guide in:
+
+- `../alicia/README.md`
+
 ## Quickstart
 
 ### Installing and running Codex CLI

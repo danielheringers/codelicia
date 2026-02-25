@@ -6,6 +6,8 @@ on:
       - "codex-rs/alicia-core/**"
       - "codex-rs/alicia-adapters/**"
       - "codex-rs/alicia-ui/**"
+      - "codex-rs/neuro-engine/**"
+      - "codex-rs/neuro-types/**"
       - "codex-rs/Cargo.toml"
       - "codex-rs/Cargo.lock"
       - ".github/workflows/alicia-ci.yml"
@@ -17,6 +19,8 @@ on:
       - "codex-rs/alicia-core/**"
       - "codex-rs/alicia-adapters/**"
       - "codex-rs/alicia-ui/**"
+      - "codex-rs/neuro-engine/**"
+      - "codex-rs/neuro-types/**"
       - "codex-rs/Cargo.toml"
       - "codex-rs/Cargo.lock"
       - ".github/workflows/alicia-ci.yml"
@@ -137,3 +141,39 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- e2e_happy_path_approval_execution_and_audit"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- e2e_denied_and_expired_blocked_audit"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- e2e_safe_cancel_persists_final_audit_state"
+
+  neuro_real_provider_smoke:
+    name: Neuro Real Provider Smoke (optional)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ secrets.NEURO_SMOKE_ADT_BASE_URL != '' && ((secrets.NEURO_SMOKE_ADT_USERNAME != '' && secrets.NEURO_SMOKE_ADT_PASSWORD != '') || secrets.NEURO_SMOKE_ADT_COOKIE != '') }}
+    defaults:
+      run:
+        working-directory: codex-rs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.93.0
+
+      - name: Real provider smoke diagnose
+        env:
+          NEURO_SMOKE_ADT_BASE_URL: ${{ secrets.NEURO_SMOKE_ADT_BASE_URL }}
+          NEURO_SMOKE_ADT_USERNAME: ${{ secrets.NEURO_SMOKE_ADT_USERNAME }}
+          NEURO_SMOKE_ADT_PASSWORD: ${{ secrets.NEURO_SMOKE_ADT_PASSWORD }}
+          NEURO_SMOKE_ADT_COOKIE: ${{ secrets.NEURO_SMOKE_ADT_COOKIE }}
+          NEURO_SMOKE_ADT_CSRF_FETCH_PATH: ${{ vars.NEURO_SMOKE_ADT_CSRF_FETCH_PATH }}
+          NEURO_SMOKE_ADT_SEARCH_PATH: ${{ vars.NEURO_SMOKE_ADT_SEARCH_PATH }}
+          NEURO_SMOKE_ADT_TIMEOUT_SECS: ${{ vars.NEURO_SMOKE_ADT_TIMEOUT_SECS }}
+          NEURO_SMOKE_ADT_INSECURE_TLS: ${{ vars.NEURO_SMOKE_ADT_INSECURE_TLS }}
+          NEURO_SMOKE_ADT_SAP_CLIENT: ${{ vars.NEURO_SMOKE_ADT_SAP_CLIENT }}
+          NEURO_SMOKE_ADT_SAP_LANGUAGE: ${{ vars.NEURO_SMOKE_ADT_SAP_LANGUAGE }}
+        run: cargo test -p neuro-engine tests::real_provider_smoke_diagnose_reports_healthy_adt -- --exact --ignored
+
+      - name: Neuro smoke summary
+        if: always()
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Neuro Real Provider Smoke"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Test: real_provider_smoke_diagnose_reports_healthy_adt"
