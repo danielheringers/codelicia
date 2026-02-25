@@ -6237,6 +6237,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "url",
+ "wiremock",
 ]
 
 [[package]]
@@ -6273,6 +6274,7 @@ dependencies = [
  "neuro-types",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

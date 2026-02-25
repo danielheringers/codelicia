@@ -13,5 +13,9 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 url.workspace = true
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+wiremock.workspace = true
+
 [lints]
 workspace = true

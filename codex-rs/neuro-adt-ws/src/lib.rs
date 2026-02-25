@@ -216,6 +216,12 @@ async fn fail_pending(pending: &PendingMap, reason: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use std::collections::BTreeMap;
+    use tokio::net::TcpListener;
+    use tokio::time::{Duration, sleep};
+    use tokio_tungstenite::accept_async;
+    use tokio_tungstenite::tungstenite::protocol::Message as WsFrame;
 
     #[tokio::test]
     async fn dispatch_text_routes_response_by_id() {
@@ -252,5 +258,112 @@ mod tests {
             .expect_err("response should contain error");
 
         assert!(matches!(error, NeuroWsClientError::ConnectionClosed { .. }));
+    }
+
+    #[tokio::test]
+    async fn send_domain_request_round_trip_with_mock_server() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let address = listener
+            .local_addr()
+            .expect("listener should have local addr");
+
+        let server_task = tokio::spawn(async move {
+            let (stream, _) = listener
+                .accept()
+                .await
+                .expect("connection should be accepted");
+            let mut ws = accept_async(stream)
+                .await
+                .expect("websocket handshake should work");
+
+            if let Some(Ok(WsFrame::Text(text))) = ws.next().await {
+                let inbound: WsMessageEnvelope<Value> =
+                    serde_json::from_str(text.as_ref()).expect("request should deserialize");
+
+                let response = WsMessageEnvelope {
+                    id: inbound.id,
+                    domain: inbound.domain,
+                    action: inbound.action,
+                    payload: json!({ "echo": true }),
+                    ok: Some(true),
+                    error: None,
+                };
+
+                ws.send(WsFrame::Text(
+                    serde_json::to_string(&response)
+                        .expect("response should serialize")
+                        .into(),
+                ))
+                .await
+                .expect("response frame should be sent");
+            }
+        });
+
+        let client = NeuroWsClient::connect(&WsClientConfig {
+            url: format!("ws://{address}"),
+            request_timeout_secs: 2,
+            connect_headers: BTreeMap::new(),
+        })
+        .await
+        .expect("client should connect");
+
+        let response = client
+            .send_domain_request("adt", "ping", json!({ "value": 1 }))
+            .await
+            .expect("domain request should succeed");
+
+        assert_eq!(response.domain, "adt");
+        assert_eq!(response.action, "ping");
+        assert_eq!(response.ok, Some(true));
+        assert_eq!(
+            response.payload.get("echo").and_then(Value::as_bool),
+            Some(true)
+        );
+
+        server_task.await.expect("server task should finish");
+    }
+
+    #[tokio::test]
+    async fn send_domain_request_times_out_when_server_does_not_reply() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let address = listener
+            .local_addr()
+            .expect("listener should have local addr");
+
+        let server_task = tokio::spawn(async move {
+            let (stream, _) = listener
+                .accept()
+                .await
+                .expect("connection should be accepted");
+            let mut ws = accept_async(stream)
+                .await
+                .expect("websocket handshake should work");
+            let _ = ws.next().await;
+            sleep(Duration::from_secs(2)).await;
+        });
+
+        let client = NeuroWsClient::connect(&WsClientConfig {
+            url: format!("ws://{address}"),
+            request_timeout_secs: 1,
+            connect_headers: BTreeMap::new(),
+        })
+        .await
+        .expect("client should connect");
+
+        let error = client
+            .send_domain_request("adt", "slow", json!({}))
+            .await
+            .expect_err("request should timeout");
+
+        assert!(matches!(
+            error,
+            NeuroWsClientError::Timeout { timeout_secs: 1 }
+        ));
+
+        server_task.await.expect("server task should finish");
     }
 }

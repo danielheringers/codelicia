@@ -304,4 +304,28 @@ mod tests {
         let result = engine.enforce_domain_policy("not-allowed");
         assert!(matches!(result, Err(NeuroEngineError::SafetyViolation(_))));
     }
+
+    #[tokio::test]
+    async fn diagnose_component_names_do_not_use_legacy_vsp_prefix() {
+        let engine = build_engine_with_policy(neuro_types::SafetyPolicy {
+            read_only: false,
+            blocked_source_patterns: Vec::new(),
+            allowed_ws_domains: Vec::new(),
+            require_etag_for_updates: false,
+        });
+
+        let report = engine.diagnose().await;
+        assert!(
+            report
+                .components
+                .iter()
+                .all(|component| !component.component.contains("vsp"))
+        );
+        assert!(
+            report
+                .components
+                .iter()
+                .any(|component| component.component == "neuro_ws")
+        );
+    }
 }

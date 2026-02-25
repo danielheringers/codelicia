@@ -387,6 +387,35 @@ struct SearchPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{header, method, path, query_param};
+    use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
+
+    struct MissingHeader(&'static str);
+
+    impl Match for MissingHeader {
+        fn matches(&self, request: &Request) -> bool {
+            !request
+                .headers
+                .keys()
+                .any(|name| name.as_str().eq_ignore_ascii_case(self.0))
+        }
+    }
+
+    fn test_client(base_url: String) -> AdtClient {
+        AdtClient::new(AdtHttpConfig {
+            base_url,
+            auth: AdtAuth::Anonymous,
+            timeout_secs: 5,
+            csrf_fetch_path: "/csrf".to_string(),
+            endpoints: neuro_types::AdtHttpEndpoints {
+                search_objects_path: "/search".to_string(),
+            },
+            insecure_tls: false,
+            sap_client: None,
+            sap_language: None,
+        })
+        .expect("client should build")
+    }
 
     #[test]
     fn build_url_appends_sap_query_parameters() {
@@ -424,5 +453,82 @@ mod tests {
         let parsed = parse_search_response(payload).expect("search response should parse");
         assert_eq!(parsed.objects.len(), 1);
         assert_eq!(parsed.objects[0].name, "ZPKG");
+    }
+
+    #[tokio::test]
+    async fn search_objects_integration_includes_query_and_parses_payload() {
+        let server = MockServer::start().await;
+        let client = test_client(server.uri());
+
+        Mock::given(method("GET"))
+            .and(path("/search"))
+            .and(query_param("query", "ZCL_NEURO"))
+            .and(query_param("maxResults", "7"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "objects": [
+                    {
+                        "uri": "/sap/bc/adt/classes/zcl_neuro",
+                        "name": "ZCL_NEURO",
+                        "type": "CLAS"
+                    }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        let result = client
+            .search_objects("ZCL_NEURO", Some(7))
+            .await
+            .expect("search should succeed");
+
+        assert_eq!(result.objects.len(), 1);
+        assert_eq!(result.objects[0].name, "ZCL_NEURO");
+        assert_eq!(result.objects[0].object_type.as_deref(), Some("CLAS"));
+    }
+
+    #[tokio::test]
+    async fn update_source_retries_with_csrf_token() {
+        let server = MockServer::start().await;
+        let client = test_client(server.uri());
+
+        Mock::given(method("PUT"))
+            .and(path("/object/source"))
+            .and(MissingHeader("x-csrf-token"))
+            .respond_with(
+                ResponseTemplate::new(403)
+                    .insert_header("x-csrf-token", "required")
+                    .set_body_string("csrf token missing"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/csrf"))
+            .and(header("x-csrf-token", "fetch"))
+            .respond_with(ResponseTemplate::new(200).insert_header("x-csrf-token", "token-123"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("PUT"))
+            .and(path("/object/source"))
+            .and(header("x-csrf-token", "token-123"))
+            .respond_with(ResponseTemplate::new(204).insert_header("etag", "\"v2\""))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client
+            .update_source(&AdtUpdateSourceRequest {
+                object_uri: "/object/source".to_string(),
+                source: "REPORT z_neuro.".to_string(),
+                etag: Some("\"v1\"".to_string()),
+            })
+            .await
+            .expect("update_source should succeed after csrf retry");
+
+        assert_eq!(result.status_code, 204);
+        assert_eq!(result.etag.as_deref(), Some("\"v2\""));
     }
 }

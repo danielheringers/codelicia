@@ -14,5 +14,8 @@ tokio = { workspace = true, features = ["rt", "sync", "time"] }
 tokio-tungstenite.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+
 [lints]
 workspace = true

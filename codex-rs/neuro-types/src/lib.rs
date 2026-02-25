@@ -184,6 +184,34 @@ pub struct NeuroRuntimeError {
     pub details: Option<Value>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NeuroCommandResponse<T> {
+    pub ok: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<T>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<NeuroRuntimeError>,
+}
+
+impl<T> NeuroCommandResponse<T> {
+    pub fn success(data: T) -> Self {
+        Self {
+            ok: true,
+            data: Some(data),
+            error: None,
+        }
+    }
+
+    pub fn failure(error: NeuroRuntimeError) -> Self {
+        Self {
+            ok: false,
+            data: None,
+            error: Some(error),
+        }
+    }
+}
+
 const fn default_timeout_secs() -> u64 {
     30
 }
