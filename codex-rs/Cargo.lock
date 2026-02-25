@@ -6227,6 +6227,75 @@ dependencies = [
 ]
 
 [[package]]
+name = "neuro-adt-core"
+version = "0.0.0"
+dependencies = [
+ "neuro-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "neuro-adt-ws"
+version = "0.0.0"
+dependencies = [
+ "futures",
+ "http 1.4.0",
+ "neuro-types",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite",
+ "uuid",
+]
+
+[[package]]
+name = "neuro-cli"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "neuro-engine",
+ "neuro-types",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "neuro-engine"
+version = "0.0.0"
+dependencies = [
+ "neuro-adt-core",
+ "neuro-adt-ws",
+ "neuro-types",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "neuro-mcp"
+version = "0.0.0"
+dependencies = [
+ "neuro-engine",
+ "neuro-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "neuro-types"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

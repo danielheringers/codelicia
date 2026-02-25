@@ -64,6 +64,12 @@ members = [
     "codex-api",
     "state",
     "codex-experimental-api-macros",
+    "neuro-adt-core",
+    "neuro-adt-ws",
+    "neuro-cli",
+    "neuro-engine",
+    "neuro-mcp",
+    "neuro-types",
 ]
 resolver = "2"
 
@@ -139,6 +145,12 @@ codex-utils-sandbox-summary = { path = "utils/sandbox-summary" }
 codex-utils-sanitizer = { path = "utils/sanitizer" }
 codex-utils-string = { path = "utils/string" }
 codex-windows-sandbox = { path = "windows-sandbox-rs" }
+neuro-adt-core = { path = "neuro-adt-core" }
+neuro-adt-ws = { path = "neuro-adt-ws" }
+neuro-cli = { path = "neuro-cli" }
+neuro-engine = { path = "neuro-engine" }
+neuro-mcp = { path = "neuro-mcp" }
+neuro-types = { path = "neuro-types" }
 core_test_support = { path = "core/tests/common" }
 exec_server_test_support = { path = "exec-server/tests/common" }
 mcp_test_support = { path = "mcp-server/tests/common" }
