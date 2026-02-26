@@ -233,6 +233,13 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "AMDPGetVariables",
     "AMDPSetBreakpoint",
     "AMDPGetBreakpoints",
+    "UI5ListApps",
+    "UI5GetApp",
+    "UI5GetFileContent",
+    "UI5UploadFile",
+    "UI5DeleteFile",
+    "UI5CreateApp",
+    "UI5DeleteApp",
     "CreateObject",
     "CreatePackage",
     "DeleteObject",
@@ -409,6 +416,13 @@ impl NeuroMcpFacade {
             "AMDPGetVariables" => self.handle_amdp_get_variables(arguments, tool_name).await,
             "AMDPSetBreakpoint" => self.handle_amdp_set_breakpoint(arguments, tool_name).await,
             "AMDPGetBreakpoints" => self.handle_amdp_get_breakpoints(arguments, tool_name).await,
+            "UI5ListApps" => self.handle_ui5_list_apps(arguments, tool_name).await,
+            "UI5GetApp" => self.handle_ui5_get_app(arguments, tool_name).await,
+            "UI5GetFileContent" => self.handle_ui5_get_file_content(arguments, tool_name).await,
+            "UI5UploadFile" => self.handle_ui5_upload_file(arguments, tool_name).await,
+            "UI5DeleteFile" => self.handle_ui5_delete_file(arguments, tool_name).await,
+            "UI5CreateApp" => self.handle_ui5_create_app(arguments, tool_name).await,
+            "UI5DeleteApp" => self.handle_ui5_delete_app(arguments, tool_name).await,
             "CreateObject" => self.handle_create_object(arguments, tool_name).await,
             "CreatePackage" => self.handle_create_package(arguments, tool_name).await,
             "DeleteObject" => self.handle_delete_object(arguments, tool_name).await,
@@ -2722,6 +2736,253 @@ impl NeuroMcpFacade {
         serde_json::to_value(response).map_err(Into::into)
     }
 
+    async fn handle_ui5_list_apps(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: Ui5ListAppsArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let max_results = args.max_results.unwrap_or(100).max(1);
+        let mut query = vec![("maxResults", max_results.to_string())];
+        if let Some(query_name) = args.query {
+            if !query_name.trim().is_empty() {
+                query.push(("name", query_name));
+            }
+        }
+        let endpoint = build_path_with_query("/sap/bc/adt/filestore/ui5-bsp/objects", &query);
+        let raw = self
+            .engine
+            .get_raw_text(endpoint.as_str(), Some("application/atom+xml"))
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_ui5_get_app(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: Ui5AppArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "app_name is required".to_owned(),
+        })?;
+        let app_name = app_name.trim().to_ascii_uppercase();
+        let endpoint = format!(
+            "/sap/bc/adt/filestore/ui5-bsp/objects/{}/content",
+            encode_path_segment(app_name.as_str())
+        );
+        let raw = self
+            .engine
+            .get_raw_text(endpoint.as_str(), Some("application/atom+xml"))
+            .await?;
+        Ok(json!({
+            "appName": app_name,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_ui5_get_file_content(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: Ui5FileArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "app_name is required".to_owned(),
+        })?;
+        let file_path = args.file_path.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "file_path is required".to_owned(),
+        })?;
+        let endpoint = build_ui5_file_content_path(app_name.as_str(), file_path.as_str());
+        let raw = self.engine.get_raw_text(endpoint.as_str(), None).await?;
+        Ok(json!({
+            "appName": app_name,
+            "filePath": file_path,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_ui5_upload_file(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: Ui5UploadFileArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "app_name is required".to_owned(),
+        })?;
+        let file_path = args.file_path.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "file_path is required".to_owned(),
+        })?;
+        let content = args.content.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "content is required".to_owned(),
+        })?;
+        let endpoint = build_ui5_file_content_path(app_name.as_str(), file_path.as_str());
+        let raw = self
+            .engine
+            .put_raw_text(
+                endpoint.as_str(),
+                Some(content.as_str()),
+                Some(
+                    args.content_type
+                        .as_deref()
+                        .unwrap_or("application/octet-stream"),
+                ),
+                None,
+            )
+            .await?;
+        Ok(json!({
+            "appName": app_name,
+            "filePath": file_path,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_ui5_delete_file(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: Ui5FileArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "app_name is required".to_owned(),
+        })?;
+        let file_path = args.file_path.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "file_path is required".to_owned(),
+        })?;
+        let app_upper = app_name.trim().to_ascii_uppercase();
+        let file_rel = file_path.trim().trim_start_matches('/');
+        let full_path = format!("{app_upper}/{file_rel}");
+        let endpoint = format!(
+            "/sap/bc/adt/filestore/ui5-bsp/objects/{}",
+            encode_path_segment(full_path.as_str())
+        );
+        let raw = self.engine.delete_raw_text(endpoint.as_str(), None).await?;
+        Ok(json!({
+            "appName": app_name,
+            "filePath": file_path,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_ui5_create_app(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: Ui5CreateAppArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "app_name is required".to_owned(),
+        })?;
+        let description = args.description.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "description is required".to_owned(),
+        })?;
+        let package_name = args.package_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "package_name is required".to_owned(),
+        })?;
+
+        let mut query = Vec::new();
+        if let Some(transport) = args.transport {
+            if !transport.trim().is_empty() {
+                query.push(("corrNr", transport));
+            }
+        }
+        let endpoint = build_path_with_query("/sap/bc/adt/filestore/ui5-bsp/objects", &query);
+        let app_upper = app_name.trim().to_ascii_uppercase();
+        let body = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<bsp:application xmlns:bsp=\"http://www.sap.com/adt/bsp\"\n    xmlns:adtcore=\"http://www.sap.com/adt/core\"\n    adtcore:name=\"{}\"\n    adtcore:description=\"{}\"\n    adtcore:packageName=\"{}\">\n</bsp:application>",
+            escape_xml(app_upper.as_str()),
+            escape_xml(description.as_str()),
+            escape_xml(package_name.as_str())
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(body.as_str()),
+                Some("application/xml"),
+                None,
+            )
+            .await?;
+        Ok(json!({
+            "appName": app_upper,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_ui5_delete_app(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: Ui5DeleteAppArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "app_name is required".to_owned(),
+        })?;
+        let app_upper = app_name.trim().to_ascii_uppercase();
+        let mut endpoint = format!(
+            "/sap/bc/adt/filestore/ui5-bsp/objects/{}",
+            encode_path_segment(app_upper.as_str())
+        );
+        if let Some(transport) = args.transport {
+            if !transport.trim().is_empty() {
+                endpoint = build_path_with_query(endpoint.as_str(), &[("corrNr", transport)]);
+            }
+        }
+        let raw = self.engine.delete_raw_text(endpoint.as_str(), None).await?;
+        Ok(json!({
+            "appName": app_upper,
+            "raw": raw,
+        }))
+    }
+
     async fn handle_ws_request(
         &self,
         arguments: Value,
@@ -3014,6 +3275,60 @@ struct AmdpBreakpointArgs {
     program: Option<String>,
     #[serde(default)]
     line: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Ui5ListAppsArgs {
+    #[serde(default)]
+    query: Option<String>,
+    #[serde(default, alias = "maxResults", alias = "max_results")]
+    max_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Ui5AppArgs {
+    #[serde(default, alias = "appName", alias = "app_name")]
+    app_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Ui5FileArgs {
+    #[serde(default, alias = "appName", alias = "app_name")]
+    app_name: Option<String>,
+    #[serde(default, alias = "filePath", alias = "file_path")]
+    file_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Ui5UploadFileArgs {
+    #[serde(default, alias = "appName", alias = "app_name")]
+    app_name: Option<String>,
+    #[serde(default, alias = "filePath", alias = "file_path")]
+    file_path: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default, alias = "contentType", alias = "content_type")]
+    content_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Ui5CreateAppArgs {
+    #[serde(default, alias = "appName", alias = "app_name")]
+    app_name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default, alias = "packageName", alias = "package_name")]
+    package_name: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Ui5DeleteAppArgs {
+    #[serde(default, alias = "appName", alias = "app_name")]
+    app_name: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3462,6 +3777,16 @@ fn escape_xml(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+fn build_ui5_file_content_path(app_name: &str, file_path: &str) -> String {
+    let app_upper = app_name.trim().to_ascii_uppercase();
+    let file_rel = file_path.trim().trim_start_matches('/');
+    let full_path = format!("{app_upper}/{file_rel}");
+    format!(
+        "/sap/bc/adt/filestore/ui5-bsp/objects/{}/content",
+        encode_path_segment(full_path.as_str())
+    )
 }
 
 fn extract_system_check_variant(customizing_xml: &str) -> Option<String> {

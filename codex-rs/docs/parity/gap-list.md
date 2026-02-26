@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T10:34:02.8919370Z
+- generated_at_utc: 2026-02-26T10:36:02.6679865Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 80
-- neuro_mcp_functionally_missing: 43
+- neuro_mcp_functionally_implemented: 87
+- neuro_mcp_functionally_missing: 36
 
 ## Catalog Matched
 
@@ -212,6 +212,13 @@ _none_
 - SetPrettyPrinterSettings
 - SetTextElements
 - SyntaxCheck
+- UI5CreateApp
+- UI5DeleteApp
+- UI5DeleteFile
+- UI5GetApp
+- UI5GetFileContent
+- UI5ListApps
+- UI5UploadFile
 - UnlockObject
 - UnpublishServiceBinding
 - UpdateClassInclude
@@ -258,10 +265,3 @@ _none_
 - RunReportAsync
 - SaveToFile
 - TraceExecution
-- UI5CreateApp
-- UI5DeleteApp
-- UI5DeleteFile
-- UI5GetApp
-- UI5GetFileContent
-- UI5ListApps
-- UI5UploadFile
