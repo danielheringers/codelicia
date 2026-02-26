@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use neuro_engine::NeuroEngine;
+use neuro_mcp::NeuroMcpFacade;
 use neuro_types::{
     AdtAuth, AdtHttpConfig, AdtHttpEndpoints, AdtUpdateSourceRequest, NeuroEngineConfig,
     SafetyPolicy, WsClientConfig,
@@ -78,13 +80,20 @@ enum Command {
         #[arg(long, default_value = "{}")]
         payload_json: String,
     },
+    ListTools,
+    Tool {
+        name: String,
+        #[arg(long, default_value = "{}")]
+        args_json: String,
+    },
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let config = build_engine_config(&cli);
-    let engine = NeuroEngine::new(config).await?;
+    let engine = Arc::new(NeuroEngine::new(config).await?);
+    let mcp = NeuroMcpFacade::new(engine.clone());
 
     match cli.command {
         Command::Diagnose => {
@@ -124,6 +133,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let response = engine
                 .send_domain_request(domain.as_str(), action.as_str(), payload)
                 .await?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+        }
+        Command::ListTools => {
+            let tools = mcp.list_tools();
+            println!("{}", serde_json::to_string_pretty(&tools)?);
+        }
+        Command::Tool { name, args_json } => {
+            let arguments: serde_json::Value = serde_json::from_str(args_json.as_str())?;
+            let response = mcp.invoke(name.as_str(), arguments).await?;
             println!("{}", serde_json::to_string_pretty(&response)?);
         }
     }

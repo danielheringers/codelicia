@@ -6261,6 +6261,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "neuro-engine",
+ "neuro-mcp",
  "neuro-types",
  "serde_json",
  "tokio",
