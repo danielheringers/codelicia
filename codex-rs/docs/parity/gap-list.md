@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T10:29:39.9053787Z
+- generated_at_utc: 2026-02-26T10:31:18.2133996Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 60
-- neuro_mcp_functionally_missing: 63
+- neuro_mcp_functionally_implemented: 64
+- neuro_mcp_functionally_missing: 59
 
 ## Catalog Matched
 
@@ -177,20 +177,24 @@ _none_
 - GetSystemInfo
 - GetTable
 - GetTableContents
+- GetTextElements
 - GetTransaction
 - GetTransport
 - GetTransportInfo
 - GetTypeInfo
 - GetUserTransports
+- GetVariants
 - ListTransports
 - LockObject
 - PrettyPrint
 - PublishServiceBinding
 - ReleaseTransport
 - RunATCCheck
+- RunReport
 - RunUnitTests
 - SearchObject
 - SetPrettyPrinterSettings
+- SetTextElements
 - SyntaxCheck
 - UnlockObject
 - UnpublishServiceBinding
@@ -232,10 +236,8 @@ _none_
 - GetClassInfo
 - GetDump
 - GetSQLTraceState
-- GetTextElements
 - GetTrace
 - GetTypeHierarchy
-- GetVariants
 - GitExport
 - GitTypes
 - GrepObject
@@ -252,11 +254,9 @@ _none_
 - ListTraces
 - MoveObject
 - RenameObject
-- RunReport
 - RunReportAsync
 - SaveToFile
 - SetBreakpoint
-- SetTextElements
 - TraceExecution
 - UI5CreateApp
 - UI5DeleteApp

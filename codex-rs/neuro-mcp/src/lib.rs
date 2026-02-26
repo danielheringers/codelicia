@@ -213,6 +213,10 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "CreateTransport",
     "ReleaseTransport",
     "DeleteTransport",
+    "RunReport",
+    "GetVariants",
+    "GetTextElements",
+    "SetTextElements",
     "CreateObject",
     "CreatePackage",
     "DeleteObject",
@@ -367,6 +371,10 @@ impl NeuroMcpFacade {
             "CreateTransport" => self.handle_create_transport(arguments, tool_name).await,
             "ReleaseTransport" => self.handle_release_transport(arguments, tool_name).await,
             "DeleteTransport" => self.handle_delete_transport(arguments, tool_name).await,
+            "RunReport" => self.handle_run_report(arguments, tool_name).await,
+            "GetVariants" => self.handle_get_variants(arguments, tool_name).await,
+            "GetTextElements" => self.handle_get_text_elements(arguments, tool_name).await,
+            "SetTextElements" => self.handle_set_text_elements(arguments, tool_name).await,
             "CreateObject" => self.handle_create_object(arguments, tool_name).await,
             "CreatePackage" => self.handle_create_package(arguments, tool_name).await,
             "DeleteObject" => self.handle_delete_object(arguments, tool_name).await,
@@ -2318,6 +2326,124 @@ impl NeuroMcpFacade {
         }))
     }
 
+    async fn handle_run_report(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: RunReportArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let report = args.report.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "report is required".to_owned(),
+        })?;
+        let mut payload = serde_json::Map::new();
+        payload.insert("report".to_owned(), json!(report));
+        if let Some(variant) = args.variant {
+            if !variant.trim().is_empty() {
+                payload.insert("variant".to_owned(), json!(variant));
+            }
+        }
+        if let Some(params) = args.params {
+            payload.insert("params".to_owned(), params);
+        }
+        self.handle_report_ws_call("runReport", Value::Object(payload))
+            .await
+    }
+
+    async fn handle_get_variants(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ReportNameArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let report = args.report.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "report is required".to_owned(),
+        })?;
+        self.handle_report_ws_call("getVariants", json!({ "report": report }))
+            .await
+    }
+
+    async fn handle_get_text_elements(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetTextElementsArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let program = args.program.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "program is required".to_owned(),
+        })?;
+        let mut payload = serde_json::Map::new();
+        payload.insert("program".to_owned(), json!(program));
+        if let Some(language) = args.language {
+            if !language.trim().is_empty() {
+                payload.insert("language".to_owned(), json!(language));
+            }
+        }
+        self.handle_report_ws_call("getTextElements", Value::Object(payload))
+            .await
+    }
+
+    async fn handle_set_text_elements(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: SetTextElementsArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let program = args.program.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "program is required".to_owned(),
+        })?;
+        let mut payload = serde_json::Map::new();
+        payload.insert("program".to_owned(), json!(program));
+        if let Some(language) = args.language {
+            if !language.trim().is_empty() {
+                payload.insert("language".to_owned(), json!(language));
+            }
+        }
+        if let Some(selection_texts) = args.selection_texts {
+            payload.insert("selection_texts".to_owned(), selection_texts);
+        }
+        if let Some(text_symbols) = args.text_symbols {
+            payload.insert("text_symbols".to_owned(), text_symbols);
+        }
+        if let Some(heading_texts) = args.heading_texts {
+            payload.insert("heading_texts".to_owned(), heading_texts);
+        }
+        self.handle_report_ws_call("setTextElements", Value::Object(payload))
+            .await
+    }
+
+    async fn handle_report_ws_call(
+        &self,
+        action: &str,
+        payload: Value,
+    ) -> Result<Value, NeuroMcpError> {
+        let response = self.engine.send_domain_request("report", action, payload).await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
     async fn handle_ws_request(
         &self,
         arguments: Value,
@@ -2528,6 +2654,44 @@ struct ReleaseTransportArgs {
     ignore_locks: Option<bool>,
     #[serde(default, alias = "skipATC", alias = "skip_atc")]
     skip_atc: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunReportArgs {
+    #[serde(default)]
+    report: Option<String>,
+    #[serde(default)]
+    variant: Option<String>,
+    #[serde(default)]
+    params: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReportNameArgs {
+    #[serde(default)]
+    report: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetTextElementsArgs {
+    #[serde(default)]
+    program: Option<String>,
+    #[serde(default)]
+    language: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SetTextElementsArgs {
+    #[serde(default)]
+    program: Option<String>,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    selection_texts: Option<Value>,
+    #[serde(default)]
+    text_symbols: Option<Value>,
+    #[serde(default)]
+    heading_texts: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
