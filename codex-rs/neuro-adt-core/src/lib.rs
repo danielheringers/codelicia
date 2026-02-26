@@ -6,6 +6,8 @@ use neuro_types::{
     AdtAuth, AdtHttpConfig, AdtObjectSummary, AdtSearchResponse, AdtSourceResponse,
     AdtUpdateSourceRequest, AdtUpdateSourceResponse,
 };
+use quick_xml::Reader;
+use quick_xml::events::{BytesStart, Event};
 use reqwest::{Method, Response, StatusCode, Url, header};
 use serde::Deserialize;
 use serde_json::Value;
@@ -106,9 +108,8 @@ impl AdtClient {
 
         let response = self.send_authenticated(self.client.get(url)).await?;
         let response = ensure_success("search_objects", response, &[StatusCode::OK]).await?;
-        let payload: Value = response.json().await?;
-
-        parse_search_response(payload)
+        let payload = response.bytes().await?;
+        parse_search_response_payload(&payload)
     }
 
     pub async fn get_source(&self, object_uri: &str) -> Result<AdtSourceResponse, AdtClientError> {
@@ -312,6 +313,107 @@ fn parse_search_response(payload: Value) -> Result<AdtSearchResponse, AdtClientE
     })
 }
 
+fn parse_search_response_payload(payload: &[u8]) -> Result<AdtSearchResponse, AdtClientError> {
+    let json_result = match serde_json::from_slice::<Value>(payload) {
+        Ok(value) => parse_search_response(value),
+        Err(error) => Err(AdtClientError::Json(error)),
+    };
+    if let Ok(parsed) = json_result {
+        return Ok(parsed);
+    }
+    let json_error = json_result.err().expect("json_result should contain error");
+
+    let xml_result = parse_search_xml_response(payload);
+    if let Ok(parsed) = xml_result {
+        return Ok(parsed);
+    }
+    let xml_error = xml_result.err().expect("xml_result should contain error");
+
+    Err(AdtClientError::Protocol(format!(
+        "search payload is neither JSON nor ADT XML (json error: {json_error}; xml error: {xml_error})"
+    )))
+}
+
+fn parse_search_xml_response(payload: &[u8]) -> Result<AdtSearchResponse, AdtClientError> {
+    let mut reader = Reader::from_reader(payload);
+    reader.config_mut().trim_text(true);
+
+    let mut buffer = Vec::new();
+    let mut objects = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Start(element)) | Ok(Event::Empty(element)) => {
+                if element.local_name().as_ref() == b"objectReference" {
+                    if let Some(object) = parse_xml_object_reference(&element)? {
+                        objects.push(object);
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Ok(_) => {}
+            Err(error) => {
+                return Err(AdtClientError::Protocol(format!(
+                    "failed to parse ADT XML search response: {error}"
+                )));
+            }
+        }
+
+        buffer.clear();
+    }
+
+    Ok(AdtSearchResponse { objects })
+}
+
+fn parse_xml_object_reference(
+    element: &BytesStart<'_>,
+) -> Result<Option<AdtObjectSummary>, AdtClientError> {
+    let mut uri: Option<String> = None;
+    let mut name: Option<String> = None;
+    let mut object_type: Option<String> = None;
+    let mut package: Option<String> = None;
+
+    for attribute in element.attributes() {
+        let attribute = attribute.map_err(|error| {
+            AdtClientError::Protocol(format!("invalid ADT XML attribute in search response: {error}"))
+        })?;
+
+        let local_key = xml_local_name(attribute.key.as_ref());
+        let value = String::from_utf8_lossy(attribute.value.as_ref()).into_owned();
+        let normalized = if value.trim().is_empty() {
+            None
+        } else {
+            Some(value)
+        };
+
+        match local_key {
+            b"uri" => uri = normalized,
+            b"name" => name = normalized,
+            b"type" => object_type = normalized,
+            b"packageName" => package = normalized,
+            _ => {}
+        }
+    }
+
+    let Some(uri) = uri else {
+        return Ok(None);
+    };
+    let Some(name) = name else {
+        return Ok(None);
+    };
+
+    Ok(Some(AdtObjectSummary {
+        uri,
+        name,
+        object_type,
+        package,
+    }))
+}
+
+fn xml_local_name(value: &[u8]) -> &[u8] {
+    value.rsplit(|byte| *byte == b':').next().unwrap_or(value)
+}
+
 fn parse_source_payload(payload: &[u8]) -> Result<String, AdtClientError> {
     let value: Value = serde_json::from_slice(payload)?;
 
@@ -457,6 +559,27 @@ mod tests {
         assert_eq!(parsed.objects[0].name, "ZPKG");
     }
 
+    #[test]
+    fn parse_search_response_payload_accepts_adt_xml() {
+        let payload = r#"
+            <adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+                <adtcore:objectReference
+                    adtcore:uri="/sap/bc/adt/programs/programs/ztest_program"
+                    adtcore:type="PROG/P"
+                    adtcore:name="ZTEST_PROGRAM"
+                    adtcore:packageName="ZTEST" />
+            </adtcore:objectReferences>
+        "#;
+
+        let parsed = parse_search_response_payload(payload.as_bytes())
+            .expect("search XML response should parse");
+
+        assert_eq!(parsed.objects.len(), 1);
+        assert_eq!(parsed.objects[0].name, "ZTEST_PROGRAM");
+        assert_eq!(parsed.objects[0].object_type.as_deref(), Some("PROG/P"));
+        assert_eq!(parsed.objects[0].package.as_deref(), Some("ZTEST"));
+    }
+
     #[tokio::test]
     async fn search_objects_integration_includes_query_and_parses_payload() {
         let server = MockServer::start().await;
@@ -486,6 +609,41 @@ mod tests {
         assert_eq!(result.objects.len(), 1);
         assert_eq!(result.objects[0].name, "ZCL_NEURO");
         assert_eq!(result.objects[0].object_type.as_deref(), Some("CLAS"));
+    }
+
+    #[tokio::test]
+    async fn search_objects_integration_parses_xml_payload() {
+        let server = MockServer::start().await;
+        let client = test_client(server.uri());
+
+        Mock::given(method("GET"))
+            .and(path("/search"))
+            .and(query_param("query", "ZTEST*"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "application/xml")
+                    .set_body_string(
+                        r#"<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+                                <adtcore:objectReference
+                                    adtcore:uri="/sap/bc/adt/programs/programs/ztest_program"
+                                    adtcore:type="PROG/P"
+                                    adtcore:name="ZTEST_PROGRAM"
+                                    adtcore:packageName="ZTEST"/>
+                            </adtcore:objectReferences>"#,
+                    ),
+            )
+            .mount(&server)
+            .await;
+
+        let result = client
+            .search_objects("ZTEST*", None)
+            .await
+            .expect("XML search should succeed");
+
+        assert_eq!(result.objects.len(), 1);
+        assert_eq!(result.objects[0].name, "ZTEST_PROGRAM");
+        assert_eq!(result.objects[0].object_type.as_deref(), Some("PROG/P"));
+        assert_eq!(result.objects[0].package.as_deref(), Some("ZTEST"));
     }
 
     #[tokio::test]
