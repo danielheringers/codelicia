@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T10:21:30.6855940Z
+- generated_at_utc: 2026-02-26T10:24:56.8744037Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 47
-- neuro_mcp_functionally_missing: 76
+- neuro_mcp_functionally_implemented: 50
+- neuro_mcp_functionally_missing: 73
 
 ## Catalog Matched
 
@@ -147,6 +147,7 @@ _none_
 - DeleteObject
 - FindDefinition
 - FindReferences
+- GetATCCustomizing
 - GetCalleesOf
 - GetCallersOf
 - GetCallGraph
@@ -176,6 +177,8 @@ _none_
 - LockObject
 - PrettyPrint
 - PublishServiceBinding
+- RunATCCheck
+- RunUnitTests
 - SearchObject
 - SetPrettyPrinterSettings
 - SyntaxCheck
@@ -219,7 +222,6 @@ _none_
 - ExecuteABAP
 - ExportToFile
 - GetAsyncResult
-- GetATCCustomizing
 - GetBreakpoints
 - GetClassInfo
 - GetDump
@@ -250,10 +252,8 @@ _none_
 - MoveObject
 - ReleaseTransport
 - RenameObject
-- RunATCCheck
 - RunReport
 - RunReportAsync
-- RunUnitTests
 - SaveToFile
 - SetBreakpoint
 - SetTextElements

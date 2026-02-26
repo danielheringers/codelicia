@@ -100,6 +100,7 @@ const VBS_TOOL_NAMES: &[&str] = &[
     "TraceExecution",
     "GetSystemInfo",
     "GetInstalledComponents",
+    "GetATCCustomizing",
     "GetConnectionInfo",
     "GetFeatures",
     "ListDumps",
@@ -191,11 +192,14 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "GetCalleesOf",
     "GetInactiveObjects",
     "GetInstalledComponents",
+    "GetATCCustomizing",
     "GetConnectionInfo",
     "GetFeatures",
     "PrettyPrint",
     "GetPrettyPrinterSettings",
     "SetPrettyPrinterSettings",
+    "RunUnitTests",
+    "RunATCCheck",
     "FindDefinition",
     "FindReferences",
     "CodeCompletion",
@@ -328,6 +332,7 @@ impl NeuroMcpFacade {
             "GetInstalledComponents" => {
                 self.handle_get_installed_components(arguments, tool_name).await
             }
+            "GetATCCustomizing" => self.handle_get_atc_customizing(arguments, tool_name).await,
             "GetConnectionInfo" => self.handle_get_connection_info(arguments, tool_name).await,
             "GetFeatures" => self.handle_get_features(arguments, tool_name).await,
             "PrettyPrint" => self.handle_pretty_print(arguments, tool_name).await,
@@ -340,6 +345,8 @@ impl NeuroMcpFacade {
             "FindDefinition" => self.handle_find_definition(arguments, tool_name).await,
             "FindReferences" => self.handle_find_references(arguments, tool_name).await,
             "CodeCompletion" => self.handle_code_completion(arguments, tool_name).await,
+            "RunUnitTests" => self.handle_run_unit_tests(arguments, tool_name).await,
+            "RunATCCheck" => self.handle_run_atc_check(arguments, tool_name).await,
             "CreateObject" => self.handle_create_object(arguments, tool_name).await,
             "CreatePackage" => self.handle_create_package(arguments, tool_name).await,
             "DeleteObject" => self.handle_delete_object(arguments, tool_name).await,
@@ -1527,6 +1534,21 @@ impl NeuroMcpFacade {
         Ok(json!({ "raw": raw }))
     }
 
+    async fn handle_get_atc_customizing(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let raw = self
+            .engine
+            .get_raw_text(
+                "/sap/bc/adt/atc/customizing",
+                Some("application/xml, application/vnd.sap.atc.customizing-v1+xml"),
+            )
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
     async fn handle_get_features(
         &self,
         _arguments: Value,
@@ -1723,6 +1745,152 @@ impl NeuroMcpFacade {
         Ok(json!({ "raw": raw }))
     }
 
+    async fn handle_run_unit_tests(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: RunUnitTestsArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUrl/object_url is required".to_owned(),
+        })?;
+        let include_dangerous = args.include_dangerous.unwrap_or(false);
+        let include_long = args.include_long.unwrap_or(false);
+
+        let body = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<aunit:runConfiguration xmlns:aunit=\"http://www.sap.com/adt/aunit\">\n  <external>\n    <coverage active=\"false\"/>\n  </external>\n  <options>\n    <uriType value=\"semantic\"/>\n    <testDeterminationStrategy sameProgram=\"true\" assignedTests=\"false\"/>\n    <testRiskLevels harmless=\"true\" dangerous=\"{}\" critical=\"false\"/>\n    <testDurations short=\"true\" medium=\"true\" long=\"{}\"/>\n    <withNavigationUri enabled=\"true\"/>\n  </options>\n  <adtcore:objectSets xmlns:adtcore=\"http://www.sap.com/adt/core\">\n    <objectSet kind=\"inclusive\">\n      <adtcore:objectReferences>\n        <adtcore:objectReference adtcore:uri=\"{}\"/>\n      </adtcore:objectReferences>\n    </objectSet>\n  </adtcore:objectSets>\n</aunit:runConfiguration>",
+            include_dangerous,
+            include_long,
+            escape_xml(object_url.as_str())
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                "/sap/bc/adt/abapunit/testruns",
+                Some(body.as_str()),
+                Some("application/*"),
+                Some("application/*"),
+            )
+            .await?;
+        Ok(json!({
+            "objectUrl": object_url,
+            "flags": {
+                "includeDangerous": include_dangerous,
+                "includeLong": include_long,
+            },
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_run_atc_check(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: RunAtcCheckArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUrl/object_url is required".to_owned(),
+        })?;
+        let max_results = args.max_results.unwrap_or(100).max(1);
+        let variant = if let Some(value) = args.variant {
+            let trimmed = value.trim().to_owned();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        } else {
+            None
+        };
+
+        let resolved_variant = if let Some(variant) = variant {
+            variant
+        } else {
+            let customizing_raw = self
+                .engine
+                .get_raw_text(
+                    "/sap/bc/adt/atc/customizing",
+                    Some("application/xml, application/vnd.sap.atc.customizing-v1+xml"),
+                )
+                .await?;
+            extract_system_check_variant(customizing_raw.as_str()).ok_or_else(|| {
+                NeuroMcpError::InvalidArguments {
+                    tool: tool_name.to_owned(),
+                    message: "unable to resolve default ATC check variant from customizing"
+                        .to_owned(),
+                }
+            })?
+        };
+
+        let worklist_request = build_path_with_query(
+            "/sap/bc/adt/atc/worklists",
+            &[("checkVariant", resolved_variant.clone())],
+        );
+        let worklist_id = self
+            .engine
+            .post_raw_text(worklist_request.as_str(), None, None, Some("text/plain"))
+            .await?
+            .trim()
+            .to_owned();
+        if worklist_id.is_empty() {
+            return Err(NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "ATC worklist id was empty".to_owned(),
+            });
+        }
+
+        let run_endpoint = build_path_with_query(
+            "/sap/bc/adt/atc/runs",
+            &[("worklistId", worklist_id.clone())],
+        );
+        let run_body = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<atc:run maximumVerdicts=\"{}\" xmlns:atc=\"http://www.sap.com/adt/atc\">\n\t<objectSets xmlns:adtcore=\"http://www.sap.com/adt/core\">\n\t\t<objectSet kind=\"inclusive\">\n\t\t\t<adtcore:objectReferences>\n\t\t\t\t<adtcore:objectReference adtcore:uri=\"{}\"/>\n\t\t\t</adtcore:objectReferences>\n\t\t</objectSet>\n\t</objectSets>\n</atc:run>",
+            max_results,
+            escape_xml(object_url.as_str())
+        );
+        let run_raw = self
+            .engine
+            .post_raw_text(
+                run_endpoint.as_str(),
+                Some(run_body.as_str()),
+                Some("application/xml"),
+                Some("application/xml"),
+            )
+            .await?;
+        let run_worklist_id = extract_xml_tag_value(run_raw.as_str(), "worklistId")
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(worklist_id);
+
+        let findings_endpoint = build_path_with_query(
+            format!("/sap/bc/adt/atc/worklists/{run_worklist_id}").as_str(),
+            &[("includeExemptedFindings", "false".to_owned())],
+        );
+        let findings_raw = self
+            .engine
+            .get_raw_text(findings_endpoint.as_str(), Some("application/atc.worklist.v1+xml"))
+            .await?;
+
+        Ok(json!({
+            "objectUrl": object_url,
+            "variant": resolved_variant,
+            "worklistId": run_worklist_id,
+            "run": run_raw,
+            "worklist": findings_raw,
+        }))
+    }
+
     async fn handle_ws_request(
         &self,
         arguments: Value,
@@ -1865,6 +2033,26 @@ struct ServiceBindingArgs {
     service_name: Option<String>,
     #[serde(default, alias = "serviceVersion")]
     service_version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunUnitTestsArgs {
+    #[serde(default, alias = "objectUrl", alias = "object_url")]
+    object_url: Option<String>,
+    #[serde(default, alias = "includeDangerous", alias = "include_dangerous")]
+    include_dangerous: Option<bool>,
+    #[serde(default, alias = "includeLong", alias = "include_long")]
+    include_long: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunAtcCheckArgs {
+    #[serde(default, alias = "objectUrl", alias = "object_url")]
+    object_url: Option<String>,
+    #[serde(default)]
+    variant: Option<String>,
+    #[serde(default, alias = "maxResults", alias = "max_results")]
+    max_results: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2295,6 +2483,30 @@ fn escape_xml(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+fn extract_system_check_variant(customizing_xml: &str) -> Option<String> {
+    let marker = "name=\"systemCheckVariant\"";
+    let marker_index = customizing_xml.find(marker)?;
+    let fragment = &customizing_xml[marker_index + marker.len()..];
+    extract_xml_attr_value(fragment, "value")
+}
+
+fn extract_xml_attr_value(fragment: &str, attribute: &str) -> Option<String> {
+    let pattern = format!("{attribute}=\"");
+    let start = fragment.find(pattern.as_str())? + pattern.len();
+    let tail = &fragment[start..];
+    let end = tail.find('"')?;
+    Some(tail[..end].to_owned())
+}
+
+fn extract_xml_tag_value(xml: &str, tag_name: &str) -> Option<String> {
+    let open_tag = format!("<{tag_name}>");
+    let close_tag = format!("</{tag_name}>");
+    let start = xml.find(open_tag.as_str())? + open_tag.len();
+    let tail = &xml[start..];
+    let end = tail.find(close_tag.as_str())?;
+    Some(tail[..end].trim().to_owned())
 }
 
 fn encode_path_segment(value: &str) -> String {
