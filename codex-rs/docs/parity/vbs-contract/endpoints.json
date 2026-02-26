@@ -1,76 +1,8 @@
 {
-  "generated_at_utc": "2026-02-26T03:13:14.0005799Z",
+  "generated_at_utc": "2026-02-26T03:14:24.0995010Z",
   "vbs_source_dir": "pkg/adt",
   "count": 105,
   "endpoints": [
-    {
-      "path": "/sap/bc/adt/atc/runs?worklistId=%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/devtools.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/programs/programs/",
-      "methods": [],
-      "occurrences": 2,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/debugger?method=getChildVariables",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/debugger.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/businessservices/odatav2/%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/crud.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/checkruns?reporters=abapCheckRun",
-      "methods": [
-        "POST"
-      ],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/devtools.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/atc/worklists/%s?includeExemptedFindings=%t",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/devtools.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/ddic/tables",
-      "methods": [
-        "POST"
-      ],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/crud.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/packages/%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/crud.go"
-      ]
-    },
     {
       "path": "/sap/bc/adt/debugger/amdp/sessions",
       "methods": [
@@ -82,23 +14,171 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/activation/inactiveobjects",
-      "methods": [
-        "GET"
-      ],
+      "path": "/sap/bc/adt/businessservices/bindings",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/crud.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/packages/",
+      "methods": [],
       "occurrences": 1,
       "files": [
         "pkg/adt/devtools.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/activation?method=activate&preauditRequested=true",
+      "path": "/sap/bc/adt/functions/groups/%s",
+      "methods": [],
+      "occurrences": 4,
+      "files": [
+        "pkg/adt/client.go",
+        "pkg/adt/crud.go",
+        "pkg/adt/workflows.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/filestore/ui5-bsp/objects",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/ui5.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/ddic/ddl/sources/%s",
+      "methods": [],
+      "occurrences": 2,
+      "files": [
+        "pkg/adt/crud.go",
+        "pkg/adt/workflows.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/programs/programs",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/crud.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/oo/classes/%s",
+      "methods": [],
+      "occurrences": 7,
+      "files": [
+        "pkg/adt/crud.go",
+        "pkg/adt/workflows.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/vit/wb/object_type/TRAN/object_name/%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/navigation/target?uri=%s&filter=%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/codeintel.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/packages/%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/crud.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/cts/transports",
       "methods": [
+        "OPTIONS",
         "POST"
       ],
+      "occurrences": 3,
+      "files": [
+        "pkg/adt/features.go",
+        "pkg/adt/transport.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/debugger/stack/type/ABAP/position/3",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/core/discovery",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/http.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/debugger?method=getChildVariables",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/messageclass/%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/cts/transportrequests/%s",
+      "methods": [],
+      "occurrences": 2,
+      "files": [
+        "pkg/adt/transport.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/programs/programs/",
+      "methods": [],
+      "occurrences": 2,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/oo/classes/ZCL_FOO/includes/testclasses",
+      "methods": [],
       "occurrences": 1,
       "files": [
         "pkg/adt/devtools.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/functions/groups/%s/fmodules/%s/source/main",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/runtime/traces/abaptraces/%s/%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
       ]
     },
     {
@@ -112,116 +192,7 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/.../source/main#start=10,5",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/codeintel.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/ddic/srvd/sources/%s",
-      "methods": [],
-      "occurrences": 2,
-      "files": [
-        "pkg/adt/crud.go",
-        "pkg/adt/workflows.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/repository/informationsystem/usageReferences?uri=%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/codeintel.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/atc/customizing",
-      "methods": [
-        "GET"
-      ],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/devtools.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/ddic/dataelements/%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/functions/groups/%s/fmodules",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/crud.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/runtime/dumps",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/bo/behaviordefinitions/%s/source/main",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/oo/classes",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/crud.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/oo/interfaces",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/crud.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/functions/groups/%s/fmodules/%s/source/main",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/datapreview/ddic",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/cts/transportrequests",
-      "methods": [
-        "GET"
-      ],
-      "occurrences": 2,
-      "files": [
-        "pkg/adt/transport.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/system/components",
+      "path": "/sap/bc/adt/st05/trace/state",
       "methods": [
         "GET"
       ],
@@ -240,14 +211,6 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/programs/programs/%s/source/main",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
       "path": "/sap/bc/adt/debugger?emode=_&semanticURIs=true&method=getStack",
       "methods": [],
       "occurrences": 1,
@@ -256,46 +219,16 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/oo/classes/",
-      "methods": [],
-      "occurrences": 3,
-      "files": [
-        "pkg/adt/workflows.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/programs/programs/ZTEST",
-      "methods": [],
-      "occurrences": 6,
-      "files": [
-        "pkg/adt/crud.go",
-        "pkg/adt/debugger.go",
-        "pkg/adt/devtools.go",
-        "pkg/adt/workflows.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/repository/nodestructure",
-      "methods": [
-        "POST"
-      ],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/oo/classes/ZCL_TEST",
+      "path": "/sap/bc/adt/oo/interfaces/%s",
       "methods": [],
       "occurrences": 4,
       "files": [
-        "pkg/adt/codeintel.go",
-        "pkg/adt/devtools.go",
+        "pkg/adt/crud.go",
         "pkg/adt/workflows.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/ddic/srvd/sources/%s/source/main",
+      "path": "/sap/bc/adt/st05/trace/directory",
       "methods": [],
       "occurrences": 1,
       "files": [
@@ -303,26 +236,17 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/oo/classes/%s",
-      "methods": [],
-      "occurrences": 7,
-      "files": [
-        "pkg/adt/crud.go",
-        "pkg/adt/workflows.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/debugger/batch",
+      "path": "/sap/bc/adt/filestore/ui5-bsp",
       "methods": [
-        "POST"
+        "OPTIONS"
       ],
       "occurrences": 1,
       "files": [
-        "pkg/adt/debugger.go"
+        "pkg/adt/features.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/abapsource/codecompletion/proposal?uri=%s&signalCompleteness=true",
+      "path": "/sap/bc/adt/.../source/main#start=10,5",
       "methods": [],
       "occurrences": 1,
       "files": [
@@ -330,10 +254,25 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/datapreview/freestyle",
-      "methods": [
-        "POST"
-      ],
+      "path": "/sap/bc/adt/debugger/breakpoints/%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/programs/includes/%s",
+      "methods": [],
+      "occurrences": 2,
+      "files": [
+        "pkg/adt/crud.go",
+        "pkg/adt/workflows.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/oo/classes/%s/objectstructure",
+      "methods": [],
       "occurrences": 1,
       "files": [
         "pkg/adt/client.go"
@@ -350,11 +289,31 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/runtime/dump/",
+      "path": "/sap/bc/adt/abapunit/testruns",
+      "methods": [
+        "POST"
+      ],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/devtools.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/checkruns?reporters=abapCheckRun",
+      "methods": [
+        "POST"
+      ],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/devtools.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/abapsource/codecompletion/proposal?uri=%s&signalCompleteness=true",
       "methods": [],
       "occurrences": 1,
       "files": [
-        "pkg/adt/client.go"
+        "pkg/adt/codeintel.go"
       ]
     },
     {
@@ -366,27 +325,116 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/cts/transports",
+      "path": "/sap/bc/adt/debugger/breakpoints",
       "methods": [
-        "OPTIONS",
+        "GET",
         "POST"
       ],
-      "occurrences": 3,
+      "occurrences": 2,
       "files": [
-        "pkg/adt/features.go",
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/cts/transportrequests",
+      "methods": [
+        "GET"
+      ],
+      "occurrences": 2,
+      "files": [
         "pkg/adt/transport.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/oo/classes/ZCL_FOO/includes/testclasses",
+      "path": "/sap/bc/adt/debugger/breakpoints/conditions",
+      "methods": [
+        "POST"
+      ],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/ddic/srvd/sources",
       "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/crud.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/datapreview/freestyle",
+      "methods": [
+        "POST"
+      ],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/abapsource/typehierarchy?uri=%s&type=%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/codeintel.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/debugger/batch",
+      "methods": [
+        "POST"
+      ],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/oo/classes/",
+      "methods": [],
+      "occurrences": 3,
+      "files": [
+        "pkg/adt/workflows.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/cai/objectexplorer/%s/entrypoints",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/activation?method=activate&preauditRequested=true",
+      "methods": [
+        "POST"
+      ],
       "occurrences": 1,
       "files": [
         "pkg/adt/devtools.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/cai/objectexplorer/%s/children",
+      "path": "/sap/bc/adt/debugger?method=getVariables",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/runtime/dump/%s",
+      "methods": [],
+      "occurrences": 3,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/oo/interfaces/%s/source/main",
       "methods": [],
       "occurrences": 1,
       "files": [
@@ -394,11 +442,29 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/vit/wb/object_type/TRAN/object_name/%s",
-      "methods": [],
+      "path": "/sap/bc/adt/system/components",
+      "methods": [
+        "GET"
+      ],
       "occurrences": 1,
       "files": [
         "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/oo/interfaces",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/crud.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/businessservices/odatav2/%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/crud.go"
       ]
     },
     {
@@ -410,11 +476,41 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/cts/transportrequests/%s",
-      "methods": [],
-      "occurrences": 2,
+      "path": "/sap/bc/adt/abapsource/prettyprinter",
+      "methods": [
+        "POST"
+      ],
+      "occurrences": 1,
       "files": [
-        "pkg/adt/transport.go"
+        "pkg/adt/codeintel.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/atc/worklists?checkVariant=%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/devtools.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/programs/programs/ZTEST",
+      "methods": [],
+      "occurrences": 6,
+      "files": [
+        "pkg/adt/crud.go",
+        "pkg/adt/debugger.go",
+        "pkg/adt/devtools.go",
+        "pkg/adt/workflows.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/programs/programs/%s",
+      "methods": [],
+      "occurrences": 5,
+      "files": [
+        "pkg/adt/crud.go",
+        "pkg/adt/workflows.go"
       ]
     },
     {
@@ -428,27 +524,15 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/cai/callgraph",
-      "methods": [
-        "POST"
-      ],
+      "path": "/sap/bc/adt/atc/runs?worklistId=%s",
+      "methods": [],
       "occurrences": 1,
       "files": [
-        "pkg/adt/client.go"
+        "pkg/adt/devtools.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/st05/trace/state",
-      "methods": [
-        "GET"
-      ],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/runtime/traces/abaptraces/%s/%s",
+      "path": "/sap/bc/adt/datapreview/ddic",
       "methods": [],
       "occurrences": 1,
       "files": [
@@ -456,46 +540,31 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/debugger/stack",
-      "methods": [
-        "GET"
-      ],
+      "path": "/sap/bc/adt/runtime/traces/abaptraces",
+      "methods": [],
       "occurrences": 1,
       "files": [
-        "pkg/adt/debugger.go"
+        "pkg/adt/client.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/ddic/ddl/sources",
-      "methods": [
-        "OPTIONS"
-      ],
+      "path": "/sap/bc/adt/cts/transportrequests/%s/%s",
+      "methods": [],
       "occurrences": 2,
       "files": [
-        "pkg/adt/crud.go",
-        "pkg/adt/features.go"
+        "pkg/adt/transport.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/ddic/structures/%s/source/main",
+      "path": "/sap/bc/adt/oo/classes/%s/includes/%s",
       "methods": [],
-      "occurrences": 1,
+      "occurrences": 2,
       "files": [
-        "pkg/adt/client.go"
+        "pkg/adt/crud.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/cai/objectexplorer/objects",
-      "methods": [
-        "GET"
-      ],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/businessservices/bindings",
+      "path": "/sap/bc/adt/functions/groups/%s/fmodules",
       "methods": [],
       "occurrences": 1,
       "files": [
@@ -511,123 +580,68 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/packages",
+      "path": "/sap/bc/adt/oo/classes/%s/source/main",
       "methods": [],
-      "occurrences": 1,
+      "occurrences": 3,
       "files": [
+        "pkg/adt/client.go",
         "pkg/adt/crud.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/abapsource/prettyprinter/settings",
-      "methods": [
-        "PUT"
-      ],
-      "occurrences": 2,
-      "files": [
-        "pkg/adt/codeintel.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/debugger?method=%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/debugger.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/ddic/tables/%s/source/main",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/abapsource/codecompletion/insertion?uri=%s&patternKey=%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/codeintel.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/filestore/ui5-bsp",
-      "methods": [
-        "OPTIONS"
-      ],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/features.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/atc/worklists?checkVariant=%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/devtools.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/ddic/ddl/sources/%s",
-      "methods": [],
-      "occurrences": 2,
-      "files": [
-        "pkg/adt/crud.go",
-        "pkg/adt/workflows.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/runtime/traces/abaptraces",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/functions/groups",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/crud.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/abapsource/prettyprinter",
+      "path": "/sap/bc/adt/ddic/tables",
       "methods": [
         "POST"
       ],
       "occurrences": 1,
       "files": [
-        "pkg/adt/codeintel.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/oo/classes/%s/includes/%s",
-      "methods": [],
-      "occurrences": 2,
-      "files": [
         "pkg/adt/crud.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/cai/objectexplorer/%s/entrypoints",
-      "methods": [],
+      "path": "/sap/bc/adt/cai/objectexplorer/objects",
+      "methods": [
+        "GET"
+      ],
       "occurrences": 1,
       "files": [
         "pkg/adt/client.go"
       ]
     },
     {
-      "path": "/sap/bc/adt/programs/includes/%s",
+      "path": "/sap/bc/adt/ddic/ddl/sources",
+      "methods": [
+        "OPTIONS"
+      ],
+      "occurrences": 2,
+      "files": [
+        "pkg/adt/crud.go",
+        "pkg/adt/features.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/ddic/srvd/sources/%s",
       "methods": [],
       "occurrences": 2,
       "files": [
         "pkg/adt/crud.go",
         "pkg/adt/workflows.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/programs/includes",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/crud.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/ddic/dataelements/%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
       ]
     },
     {
@@ -639,11 +653,134 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/debugger?method=getVariables",
+      "path": "/sap/bc/adt/ddic/tables/%s/source/main",
       "methods": [],
       "occurrences": 1,
       "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/cai/objectexplorer/%s/children",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/repository/informationsystem/usageReferences?uri=%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/codeintel.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/abapsource/codecompletion/insertion?uri=%s&patternKey=%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/codeintel.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/repository/nodestructure",
+      "methods": [
+        "POST"
+      ],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/activation/inactiveobjects",
+      "methods": [
+        "GET"
+      ],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/devtools.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/bo/behaviordefinitions/%s/source/main",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/ddic/srvd/sources/%s/source/main",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/oo/classes/ZCL_TEST",
+      "methods": [],
+      "occurrences": 4,
+      "files": [
+        "pkg/adt/codeintel.go",
+        "pkg/adt/devtools.go",
+        "pkg/adt/workflows.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/packages",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/crud.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/atc/worklists/%s?includeExemptedFindings=%t",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/devtools.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/cai/callgraph",
+      "methods": [
+        "POST"
+      ],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/debugger/listeners",
+      "methods": [
+        "DELETE",
+        "GET"
+      ],
+      "occurrences": 3,
+      "files": [
         "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/oo/classes",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/crud.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/oo/classes/%s/includes",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/crud.go"
       ]
     },
     {
@@ -657,7 +794,88 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/ddic/srvd/sources",
+      "path": "/sap/bc/adt/programs/programs/%s/source/main",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/runtime/dumps",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/functions/groups/%s/fmodules/%s",
+      "methods": [],
+      "occurrences": 2,
+      "files": [
+        "pkg/adt/crud.go",
+        "pkg/adt/workflows.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/programs/programs/ZTEST/source/main",
+      "methods": [],
+      "occurrences": 4,
+      "files": [
+        "pkg/adt/codeintel.go",
+        "pkg/adt/crud.go",
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/abapsource/prettyprinter/settings",
+      "methods": [
+        "PUT"
+      ],
+      "occurrences": 2,
+      "files": [
+        "pkg/adt/codeintel.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/atc/customizing",
+      "methods": [
+        "GET"
+      ],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/devtools.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/debugger/stack",
+      "methods": [
+        "GET"
+      ],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/debugger?method=%s&uri=%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/debugger?method=%s",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/debugger.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/functions/groups",
       "methods": [],
       "occurrences": 1,
       "files": [
@@ -665,11 +883,19 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/debugger/breakpoints/%s",
+      "path": "/sap/bc/adt/runtime/dump/",
       "methods": [],
       "occurrences": 1,
       "files": [
-        "pkg/adt/debugger.go"
+        "pkg/adt/client.go"
+      ]
+    },
+    {
+      "path": "/sap/bc/adt/ddic/structures/%s/source/main",
+      "methods": [],
+      "occurrences": 1,
+      "files": [
+        "pkg/adt/client.go"
       ]
     },
     {
@@ -689,233 +915,7 @@
       ]
     },
     {
-      "path": "/sap/bc/adt/functions/groups/%s",
-      "methods": [],
-      "occurrences": 4,
-      "files": [
-        "pkg/adt/client.go",
-        "pkg/adt/crud.go",
-        "pkg/adt/workflows.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/programs/programs/ZTEST/source/main",
-      "methods": [],
-      "occurrences": 4,
-      "files": [
-        "pkg/adt/codeintel.go",
-        "pkg/adt/crud.go",
-        "pkg/adt/debugger.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/runtime/dump/%s",
-      "methods": [],
-      "occurrences": 3,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/programs/programs",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/crud.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/abapunit/testruns",
-      "methods": [
-        "POST"
-      ],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/devtools.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/filestore/ui5-bsp/objects",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/ui5.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/core/discovery",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/http.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/debugger/stack/type/ABAP/position/3",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/debugger.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/programs/programs/%s",
-      "methods": [],
-      "occurrences": 5,
-      "files": [
-        "pkg/adt/crud.go",
-        "pkg/adt/workflows.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/debugger/listeners",
-      "methods": [
-        "DELETE",
-        "GET"
-      ],
-      "occurrences": 3,
-      "files": [
-        "pkg/adt/debugger.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/oo/classes/%s/source/main",
-      "methods": [],
-      "occurrences": 3,
-      "files": [
-        "pkg/adt/client.go",
-        "pkg/adt/crud.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/oo/classes/%s/includes",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/crud.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/packages/",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/devtools.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/abapsource/typehierarchy?uri=%s&type=%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/codeintel.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/messageclass/%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/programs/includes",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/crud.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/debugger/breakpoints",
-      "methods": [
-        "GET",
-        "POST"
-      ],
-      "occurrences": 2,
-      "files": [
-        "pkg/adt/debugger.go"
-      ]
-    },
-    {
       "path": "/sap/bc/adt/ddic/views/%s/source/main",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/st05/trace/directory",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/debugger?method=%s&uri=%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/debugger.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/oo/interfaces/%s",
-      "methods": [],
-      "occurrences": 4,
-      "files": [
-        "pkg/adt/crud.go",
-        "pkg/adt/workflows.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/debugger/breakpoints/conditions",
-      "methods": [
-        "POST"
-      ],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/debugger.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/oo/interfaces/%s/source/main",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/client.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/navigation/target?uri=%s&filter=%s",
-      "methods": [],
-      "occurrences": 1,
-      "files": [
-        "pkg/adt/codeintel.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/cts/transportrequests/%s/%s",
-      "methods": [],
-      "occurrences": 2,
-      "files": [
-        "pkg/adt/transport.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/functions/groups/%s/fmodules/%s",
-      "methods": [],
-      "occurrences": 2,
-      "files": [
-        "pkg/adt/crud.go",
-        "pkg/adt/workflows.go"
-      ]
-    },
-    {
-      "path": "/sap/bc/adt/oo/classes/%s/objectstructure",
       "methods": [],
       "occurrences": 1,
       "files": [

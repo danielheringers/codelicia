@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T03:13:14.0005799Z
+- generated_at_utc: 2026-02-26T03:14:24.0995010Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 40
-- neuro_mcp_functionally_missing: 83
+- neuro_mcp_functionally_implemented: 41
+- neuro_mcp_functionally_missing: 82
 
 ## Catalog Matched
 
@@ -155,6 +155,7 @@ _none_
 - GetFeatures
 - GetFunction
 - GetFunctionGroup
+- GetInactiveObjects
 - GetInclude
 - GetInstalledComponents
 - GetInterface
@@ -219,7 +220,6 @@ _none_
 - GetBreakpoints
 - GetClassInfo
 - GetDump
-- GetInactiveObjects
 - GetSQLTraceState
 - GetSystemInfo
 - GetTableContents

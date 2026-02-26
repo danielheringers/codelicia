@@ -188,6 +188,7 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "GetCallGraph",
     "GetCallersOf",
     "GetCalleesOf",
+    "GetInactiveObjects",
     "GetInstalledComponents",
     "GetConnectionInfo",
     "GetFeatures",
@@ -316,6 +317,7 @@ impl NeuroMcpFacade {
             "GetCallGraph" => self.handle_get_call_graph(arguments, tool_name).await,
             "GetCallersOf" => self.handle_get_callers_of(arguments, tool_name).await,
             "GetCalleesOf" => self.handle_get_callees_of(arguments, tool_name).await,
+            "GetInactiveObjects" => self.handle_get_inactive_objects(arguments, tool_name).await,
             "GetInstalledComponents" => {
                 self.handle_get_installed_components(arguments, tool_name).await
             }
@@ -1183,6 +1185,21 @@ impl NeuroMcpFacade {
             )
             .await
             .map_err(Into::into)
+    }
+
+    async fn handle_get_inactive_objects(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let raw = self
+            .engine
+            .get_raw_text(
+                "/sap/bc/adt/activation/inactiveobjects",
+                Some("application/vnd.sap.adt.inactivectsobjects.v1+xml, application/xml;q=0.8"),
+            )
+            .await?;
+        Ok(json!({ "raw": raw }))
     }
 
     async fn handle_get_features(
