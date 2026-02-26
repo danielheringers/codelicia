@@ -241,6 +241,39 @@ impl AdtClient {
         response_to_string(response).await
     }
 
+    pub async fn delete_text(
+        &self,
+        object_uri: &str,
+        accept: Option<&str>,
+    ) -> Result<String, AdtClientError> {
+        let url = self.build_url(object_uri)?;
+        let accept = accept.map(str::to_owned);
+
+        let response = self
+            .send_with_csrf_retry(Method::DELETE, url, move |builder| {
+                let mut request = builder;
+
+                if let Some(accept) = accept.as_deref() {
+                    request = request.header(header::ACCEPT, accept);
+                }
+
+                request
+            })
+            .await?;
+
+        let response = ensure_success(
+            "delete_text",
+            response,
+            &[
+                StatusCode::OK,
+                StatusCode::ACCEPTED,
+                StatusCode::NO_CONTENT,
+            ],
+        )
+        .await?;
+        response_to_string(response).await
+    }
+
     pub async fn update_source(
         &self,
         request: &AdtUpdateSourceRequest,
@@ -891,6 +924,46 @@ mod tests {
             )
             .await
             .expect("put_text should succeed after csrf retry");
+        assert_eq!(result, "ok");
+    }
+
+    #[tokio::test]
+    async fn delete_text_retries_with_csrf_token() {
+        let server = MockServer::start().await;
+        let client = test_client(server.uri());
+
+        Mock::given(method("DELETE"))
+            .and(path("/object/action"))
+            .and(MissingHeader("x-csrf-token"))
+            .respond_with(
+                ResponseTemplate::new(403)
+                    .insert_header("x-csrf-token", "required")
+                    .set_body_string("csrf token missing"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/csrf"))
+            .and(header("x-csrf-token", "fetch"))
+            .respond_with(ResponseTemplate::new(200).insert_header("x-csrf-token", "token-123"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/object/action"))
+            .and(header("x-csrf-token", "token-123"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client
+            .delete_text("/object/action", Some("application/xml"))
+            .await
+            .expect("delete_text should succeed after csrf retry");
         assert_eq!(result, "ok");
     }
 }

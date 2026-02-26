@@ -118,6 +118,17 @@ impl NeuroEngine {
             .map_err(Into::into)
     }
 
+    pub async fn delete_raw_text(
+        &self,
+        object_uri: &str,
+        accept: Option<&str>,
+    ) -> Result<String, NeuroEngineError> {
+        self.adt
+            .delete_text(object_uri, accept)
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn diagnose(&self) -> RuntimeDiagnoseResponse {
         let adt_started = Instant::now();
         let adt_ping = self.adt.ping().await;

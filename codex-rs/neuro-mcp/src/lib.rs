@@ -176,6 +176,7 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "GetMessages",
     "GetPackage",
     "GetTable",
+    "GetTableContents",
     "GetStructure",
     "GetTransaction",
     "GetTypeInfo",
@@ -198,6 +199,11 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "FindDefinition",
     "FindReferences",
     "CodeCompletion",
+    "CreateObject",
+    "CreatePackage",
+    "DeleteObject",
+    "PublishServiceBinding",
+    "UnpublishServiceBinding",
     "LockObject",
     "UnlockObject",
     "Activate",
@@ -298,6 +304,7 @@ impl NeuroMcpFacade {
                     &["tableName", "table_name", "name"],
                 )
                 .await,
+            "GetTableContents" => self.handle_get_table_contents(arguments, tool_name).await,
             "GetStructure" => self
                 .handle_get_source_by_pattern(
                     arguments,
@@ -333,6 +340,17 @@ impl NeuroMcpFacade {
             "FindDefinition" => self.handle_find_definition(arguments, tool_name).await,
             "FindReferences" => self.handle_find_references(arguments, tool_name).await,
             "CodeCompletion" => self.handle_code_completion(arguments, tool_name).await,
+            "CreateObject" => self.handle_create_object(arguments, tool_name).await,
+            "CreatePackage" => self.handle_create_package(arguments, tool_name).await,
+            "DeleteObject" => self.handle_delete_object(arguments, tool_name).await,
+            "PublishServiceBinding" => {
+                self.handle_publish_service_binding(arguments, tool_name, true)
+                    .await
+            }
+            "UnpublishServiceBinding" => {
+                self.handle_publish_service_binding(arguments, tool_name, false)
+                    .await
+            }
             "LockObject" => self.handle_lock_object(arguments, tool_name).await,
             "UnlockObject" => self.handle_unlock_object(arguments, tool_name).await,
             "Activate" => self.handle_activate(arguments, tool_name).await,
@@ -703,6 +721,313 @@ impl NeuroMcpFacade {
             .get_raw_text(path.as_str(), Some("application/vnd.sap.adt.codegen.data.v1+xml"))
             .await?;
         Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_get_table_contents(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: TableContentsArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let table_name = args.table_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "tableName/table_name is required".to_owned(),
+        })?;
+
+        let table_name = table_name.to_ascii_uppercase();
+        let max_rows = args.max_rows.unwrap_or(100).max(1);
+        let path = build_path_with_query(
+            "/sap/bc/adt/datapreview/ddic",
+            &[
+                ("rowNumber", max_rows.to_string()),
+                ("ddicEntityName", table_name.clone()),
+            ],
+        );
+        let sql_filter = args.sql_query.and_then(|query| {
+            let trimmed = query.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_owned())
+            }
+        });
+        let raw = self
+            .engine
+            .post_raw_text(
+                path.as_str(),
+                sql_filter.as_deref(),
+                if sql_filter.is_some() {
+                    Some("text/plain")
+                } else {
+                    None
+                },
+                Some("application/*"),
+            )
+            .await?;
+        Ok(json!({
+            "tableName": table_name,
+            "maxRows": max_rows,
+            "sqlFilter": sql_filter,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_create_object(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CreateObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        self.create_object_request(&args, tool_name).await
+    }
+
+    async fn handle_create_package(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CreatePackageArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let name = args.name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "name is required".to_owned(),
+        })?;
+        let description = args.description.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "description is required".to_owned(),
+        })?;
+        let package_name = args.parent.unwrap_or_default();
+        let transport = args.transport.unwrap_or_default();
+        if !name.trim_start().starts_with('$') && transport.trim().is_empty() {
+            return Err(NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message:
+                    "transport is required for transportable packages (non-$ packages)".to_owned(),
+            });
+        }
+
+        let create_args = CreateObjectArgs {
+            object_type: Some("DEVC/K".to_owned()),
+            name: Some(name),
+            description: Some(description),
+            package_name: Some(package_name),
+            transport: if transport.trim().is_empty() {
+                None
+            } else {
+                Some(transport)
+            },
+            parent_name: None,
+            responsible: None,
+            software_component: args.software_component,
+            service_definition: None,
+            binding_type: None,
+            binding_version: None,
+            binding_category: None,
+        };
+        self.create_object_request(&create_args, tool_name).await
+    }
+
+    async fn handle_delete_object(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: DeleteObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUrl/object_url is required".to_owned(),
+        })?;
+        let lock_handle = args.lock_handle.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "lockHandle/lock_handle is required".to_owned(),
+        })?;
+        let mut query = vec![("lockHandle", lock_handle.clone())];
+        if let Some(transport) = args.transport {
+            if !transport.trim().is_empty() {
+                query.push(("corrNr", transport));
+            }
+        }
+        let path = build_path_with_query(object_url.as_str(), &query);
+        let raw = self.engine.delete_raw_text(path.as_str(), None).await?;
+        Ok(json!({
+            "objectUrl": object_url,
+            "lockHandle": lock_handle,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_publish_service_binding(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+        publish: bool,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ServiceBindingArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let service_name = args.service_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "serviceName/service_name is required".to_owned(),
+        })?;
+        let service_version = args.service_version.unwrap_or_else(|| "0001".to_owned());
+        let action = if publish { "publishjobs" } else { "unpublishjobs" };
+        let endpoint = build_path_with_query(
+            format!("/sap/bc/adt/businessservices/odatav2/{action}").as_str(),
+            &[
+                ("servicename", service_name.clone()),
+                ("serviceversion", service_version.clone()),
+            ],
+        );
+        let body = format!(
+            "<adtcore:objectReferences xmlns:adtcore=\"http://www.sap.com/adt/core\">\n  <adtcore:objectReference adtcore:name=\"{}\"/>\n</adtcore:objectReferences>",
+            escape_xml(service_name.as_str())
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(body.as_str()),
+                Some("application/*"),
+                Some("application/*"),
+            )
+            .await?;
+        Ok(json!({
+            "serviceName": service_name,
+            "serviceVersion": service_version,
+            "action": if publish { "publish" } else { "unpublish" },
+            "raw": raw,
+        }))
+    }
+
+    async fn create_object_request(
+        &self,
+        args: &CreateObjectArgs,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let object_type = args.object_type.as_deref().ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectType/object_type is required".to_owned(),
+        })?
+        .trim()
+        .to_ascii_uppercase();
+        let name = args.name.as_deref().ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "name is required".to_owned(),
+        })?
+        .trim()
+        .to_ascii_uppercase();
+        let description = args.description.as_deref().ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "description is required".to_owned(),
+        })?
+        .trim()
+        .to_owned();
+        let package_name = args
+            .package_name
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_uppercase();
+        let parent_name = args
+            .parent_name
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_uppercase();
+
+        if object_type != "DEVC/K" && package_name.is_empty() {
+            return Err(NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "packageName/package_name is required".to_owned(),
+            });
+        }
+
+        let type_info = resolve_create_object_type_info(
+            object_type.as_str(),
+            if parent_name.is_empty() {
+                None
+            } else {
+                Some(parent_name.as_str())
+            },
+        )
+        .ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: format!("unsupported object_type `{object_type}` or missing required parent_name"),
+        })?;
+
+        let responsible = args
+            .responsible
+            .clone()
+            .or_else(|| std::env::var("NEURO_SAP_USER").ok())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "DDIC".to_owned())
+            .to_ascii_uppercase();
+        let body = build_create_object_body(
+            object_type.as_str(),
+            name.as_str(),
+            description.as_str(),
+            package_name.as_str(),
+            parent_name.as_str(),
+            responsible.as_str(),
+            args,
+            &type_info,
+        );
+
+        let mut query = Vec::new();
+        if let Some(transport) = args.transport.as_deref() {
+            let transport = transport.trim();
+            if !transport.is_empty() {
+                query.push(("corrNr", transport.to_owned()));
+            }
+        }
+        let endpoint = build_path_with_query(type_info.creation_path.as_str(), &query);
+        let raw = self
+            .engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(body.as_str()),
+                Some(type_info.content_type),
+                None,
+            )
+            .await?;
+
+        Ok(json!({
+            "status": "created",
+            "objectType": object_type,
+            "name": name,
+            "objectUrl": build_object_url(
+                object_type.as_str(),
+                name.as_str(),
+                if parent_name.is_empty() {
+                    None
+                } else {
+                    Some(parent_name.as_str())
+                }
+            ),
+            "raw": raw,
+        }))
     }
 
     async fn handle_lock_object(
@@ -1473,6 +1798,76 @@ struct FunctionSourceArgs {
 }
 
 #[derive(Debug, Deserialize)]
+struct TableContentsArgs {
+    #[serde(default, alias = "tableName", alias = "name")]
+    table_name: Option<String>,
+    #[serde(default, alias = "maxRows")]
+    max_rows: Option<u32>,
+    #[serde(default, alias = "sqlQuery")]
+    sql_query: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateObjectArgs {
+    #[serde(default, alias = "objectType")]
+    object_type: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default, alias = "packageName")]
+    package_name: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
+    #[serde(default, alias = "parentName")]
+    parent_name: Option<String>,
+    #[serde(default)]
+    responsible: Option<String>,
+    #[serde(default, alias = "softwareComponent")]
+    software_component: Option<String>,
+    #[serde(default, alias = "serviceDefinition")]
+    service_definition: Option<String>,
+    #[serde(default, alias = "bindingType")]
+    binding_type: Option<String>,
+    #[serde(default, alias = "bindingVersion")]
+    binding_version: Option<String>,
+    #[serde(default, alias = "bindingCategory")]
+    binding_category: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreatePackageArgs {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    parent: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
+    #[serde(default, alias = "softwareComponent", alias = "software_component")]
+    software_component: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeleteObjectArgs {
+    #[serde(default, alias = "objectUrl", alias = "object_url")]
+    object_url: Option<String>,
+    #[serde(default, alias = "lockHandle", alias = "lock_handle")]
+    lock_handle: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ServiceBindingArgs {
+    #[serde(default, alias = "serviceName")]
+    service_name: Option<String>,
+    #[serde(default, alias = "serviceVersion")]
+    service_version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct LockObjectArgs {
     #[serde(default, alias = "objectUrl", alias = "object_url")]
     object_url: Option<String>,
@@ -1647,6 +2042,261 @@ fn extract_non_empty_string(fields: &BTreeMap<String, Value>, keys: &[&str]) -> 
     })
 }
 
+struct CreateObjectTypeInfo {
+    creation_path: String,
+    root_name: &'static str,
+    namespace: &'static str,
+    content_type: &'static str,
+}
+
+fn resolve_create_object_type_info(
+    object_type: &str,
+    parent_name: Option<&str>,
+) -> Option<CreateObjectTypeInfo> {
+    let info = match object_type {
+        "PROG/P" => CreateObjectTypeInfo {
+            creation_path: "/sap/bc/adt/programs/programs".to_owned(),
+            root_name: "program:abapProgram",
+            namespace: r#"xmlns:program="http://www.sap.com/adt/programs/programs""#,
+            content_type: "application/*",
+        },
+        "PROG/I" => CreateObjectTypeInfo {
+            creation_path: "/sap/bc/adt/programs/includes".to_owned(),
+            root_name: "include:abapInclude",
+            namespace: r#"xmlns:include="http://www.sap.com/adt/programs/includes""#,
+            content_type: "application/*",
+        },
+        "CLAS/OC" => CreateObjectTypeInfo {
+            creation_path: "/sap/bc/adt/oo/classes".to_owned(),
+            root_name: "class:abapClass",
+            namespace: r#"xmlns:class="http://www.sap.com/adt/oo/classes""#,
+            content_type: "application/*",
+        },
+        "INTF/OI" => CreateObjectTypeInfo {
+            creation_path: "/sap/bc/adt/oo/interfaces".to_owned(),
+            root_name: "intf:abapInterface",
+            namespace: r#"xmlns:intf="http://www.sap.com/adt/oo/interfaces""#,
+            content_type: "application/*",
+        },
+        "FUGR/F" => CreateObjectTypeInfo {
+            creation_path: "/sap/bc/adt/functions/groups".to_owned(),
+            root_name: "group:abapFunctionGroup",
+            namespace: r#"xmlns:group="http://www.sap.com/adt/functions/groups""#,
+            content_type: "application/*",
+        },
+        "FUGR/FF" => CreateObjectTypeInfo {
+            creation_path: format!(
+                "/sap/bc/adt/functions/groups/{}/fmodules",
+                encode_path_segment(parent_name?.to_ascii_uppercase().as_str())
+            ),
+            root_name: "fmodule:abapFunctionModule",
+            namespace: r#"xmlns:fmodule="http://www.sap.com/adt/functions/fmodules""#,
+            content_type: "application/*",
+        },
+        "DEVC/K" => CreateObjectTypeInfo {
+            creation_path: "/sap/bc/adt/packages".to_owned(),
+            root_name: "pack:package",
+            namespace: r#"xmlns:pack="http://www.sap.com/adt/packages""#,
+            content_type: "application/*",
+        },
+        "DDLS/DF" => CreateObjectTypeInfo {
+            creation_path: "/sap/bc/adt/ddic/ddl/sources".to_owned(),
+            root_name: "ddl:ddlSource",
+            namespace: r#"xmlns:ddl="http://www.sap.com/adt/ddic/ddlsources""#,
+            content_type: "application/*",
+        },
+        "BDEF/BDO" => CreateObjectTypeInfo {
+            creation_path: "/sap/bc/adt/bo/behaviordefinitions".to_owned(),
+            root_name: "bdef:behaviorDefinition",
+            namespace: r#"xmlns:bdef="http://www.sap.com/adt/bo/behaviordefinitions""#,
+            content_type: "application/vnd.sap.adt.blues.v1+xml",
+        },
+        "SRVD/SRV" => CreateObjectTypeInfo {
+            creation_path: "/sap/bc/adt/ddic/srvd/sources".to_owned(),
+            root_name: "srvd:srvdSource",
+            namespace: r#"xmlns:srvd="http://www.sap.com/adt/ddic/srvdsources""#,
+            content_type: "application/*",
+        },
+        "SRVB/SVB" => CreateObjectTypeInfo {
+            creation_path: "/sap/bc/adt/businessservices/bindings".to_owned(),
+            root_name: "srvb:serviceBinding",
+            namespace: r#"xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings""#,
+            content_type: "application/*",
+        },
+        _ => return None,
+    };
+    Some(info)
+}
+
+fn build_create_object_body(
+    object_type: &str,
+    name: &str,
+    description: &str,
+    package_name: &str,
+    parent_name: &str,
+    responsible: &str,
+    args: &CreateObjectArgs,
+    type_info: &CreateObjectTypeInfo,
+) -> String {
+    if object_type == "DEVC/K" {
+        let software_component = if name.starts_with('$') {
+            "LOCAL".to_owned()
+        } else {
+            args.software_component
+                .clone()
+                .unwrap_or_default()
+                .to_ascii_uppercase()
+        };
+        return format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<{} {} xmlns:adtcore=\"http://www.sap.com/adt/core\"\n  adtcore:description=\"{}\"\n  adtcore:name=\"{}\"\n  adtcore:type=\"{}\"\n  adtcore:responsible=\"{}\">\n  <pack:attributes pack:packageType=\"development\"/>\n  <pack:superPackage adtcore:name=\"{}\" adtcore:type=\"DEVC/K\"/>\n  <pack:applicationComponent/>\n  <pack:transport>\n    <pack:softwareComponent pack:name=\"{}\"/>\n    <pack:transportLayer pack:name=\"\"/>\n  </pack:transport>\n  <pack:translation/>\n  <pack:useAccesses/>\n  <pack:packageInterfaces/>\n  <pack:subPackages/>\n</{}>",
+            type_info.root_name,
+            type_info.namespace,
+            escape_xml(description),
+            escape_xml(name),
+            object_type,
+            escape_xml(responsible),
+            escape_xml(package_name),
+            escape_xml(software_component.as_str()),
+            type_info.root_name
+        );
+    }
+
+    if object_type == "FUGR/FF" {
+        return format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<{} {} xmlns:adtcore=\"http://www.sap.com/adt/core\"\n  adtcore:description=\"{}\"\n  adtcore:name=\"{}\"\n  adtcore:type=\"{}\"\n  adtcore:responsible=\"{}\">\n  <adtcore:containerRef adtcore:name=\"{}\" adtcore:type=\"FUGR/F\"\n    adtcore:uri=\"/sap/bc/adt/functions/groups/{}\"/>\n</{}>",
+            type_info.root_name,
+            type_info.namespace,
+            escape_xml(description),
+            escape_xml(name),
+            object_type,
+            escape_xml(responsible),
+            escape_xml(parent_name),
+            encode_path_segment(parent_name.to_ascii_lowercase().as_str()),
+            type_info.root_name
+        );
+    }
+
+    if object_type == "SRVD/SRV" {
+        return format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<{} {} xmlns:adtcore=\"http://www.sap.com/adt/core\"\n  adtcore:description=\"{}\"\n  adtcore:name=\"{}\"\n  adtcore:type=\"{}\"\n  adtcore:responsible=\"{}\"\n  srvd:srvdSourceType=\"S\">\n  <adtcore:packageRef adtcore:name=\"{}\"/>\n</{}>",
+            type_info.root_name,
+            type_info.namespace,
+            escape_xml(description),
+            escape_xml(name),
+            object_type,
+            escape_xml(responsible),
+            escape_xml(package_name),
+            type_info.root_name
+        );
+    }
+
+    if object_type == "SRVB/SVB" {
+        let binding_type = args
+            .binding_type
+            .clone()
+            .unwrap_or_else(|| "ODATA".to_owned());
+        let binding_version = args
+            .binding_version
+            .clone()
+            .unwrap_or_else(|| "V2".to_owned());
+        let binding_category = args
+            .binding_category
+            .clone()
+            .unwrap_or_else(|| "0".to_owned());
+        let service_definition = args
+            .service_definition
+            .clone()
+            .unwrap_or_default()
+            .to_ascii_uppercase();
+        return format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<{} {} xmlns:adtcore=\"http://www.sap.com/adt/core\"\n  adtcore:description=\"{}\"\n  adtcore:name=\"{}\"\n  adtcore:type=\"{}\"\n  adtcore:responsible=\"{}\">\n  <adtcore:packageRef adtcore:name=\"{}\"/>\n  <srvb:services srvb:name=\"{}\">\n    <srvb:content srvb:version=\"0001\">\n      <srvb:serviceDefinition adtcore:name=\"{}\"/>\n    </srvb:content>\n  </srvb:services>\n  <srvb:binding srvb:category=\"{}\" srvb:type=\"{}\" srvb:version=\"{}\">\n    <srvb:implementation adtcore:name=\"\"/>\n  </srvb:binding>\n</{}>",
+            type_info.root_name,
+            type_info.namespace,
+            escape_xml(description),
+            escape_xml(name),
+            object_type,
+            escape_xml(responsible),
+            escape_xml(package_name),
+            escape_xml(name),
+            escape_xml(service_definition.as_str()),
+            escape_xml(binding_category.as_str()),
+            escape_xml(binding_type.as_str()),
+            escape_xml(binding_version.as_str()),
+            type_info.root_name
+        );
+    }
+
+    if object_type == "BDEF/BDO" {
+        return format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<blue:blueSource xmlns:blue=\"http://www.sap.com/wbobj/blue\" xmlns:adtcore=\"http://www.sap.com/adt/core\"\n  adtcore:description=\"{}\"\n  adtcore:name=\"{}\"\n  adtcore:type=\"{}\"\n  adtcore:responsible=\"{}\">\n  <adtcore:packageRef adtcore:name=\"{}\"/>\n</blue:blueSource>",
+            escape_xml(description),
+            escape_xml(name),
+            object_type,
+            escape_xml(responsible),
+            escape_xml(package_name)
+        );
+    }
+
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<{} {} xmlns:adtcore=\"http://www.sap.com/adt/core\"\n  adtcore:description=\"{}\"\n  adtcore:name=\"{}\"\n  adtcore:type=\"{}\"\n  adtcore:responsible=\"{}\">\n  <adtcore:packageRef adtcore:name=\"{}\"/>\n</{}>",
+        type_info.root_name,
+        type_info.namespace,
+        escape_xml(description),
+        escape_xml(name),
+        object_type,
+        escape_xml(responsible),
+        escape_xml(package_name),
+        type_info.root_name
+    )
+}
+
+fn build_object_url(object_type: &str, name: &str, parent_name: Option<&str>) -> String {
+    let encoded_name = encode_path_segment(name);
+    match object_type {
+        "PROG/P" => format!("/sap/bc/adt/programs/programs/{encoded_name}"),
+        "PROG/I" => format!("/sap/bc/adt/programs/includes/{encoded_name}"),
+        "CLAS/OC" => format!("/sap/bc/adt/oo/classes/{encoded_name}"),
+        "INTF/OI" => format!("/sap/bc/adt/oo/interfaces/{encoded_name}"),
+        "FUGR/F" => format!("/sap/bc/adt/functions/groups/{encoded_name}"),
+        "FUGR/FF" => format!(
+            "/sap/bc/adt/functions/groups/{}/fmodules/{encoded_name}",
+            encode_path_segment(
+                parent_name
+                    .unwrap_or_default()
+                    .to_ascii_uppercase()
+                    .as_str()
+            )
+        ),
+        "DEVC/K" => format!("/sap/bc/adt/packages/{encoded_name}"),
+        "DDLS/DF" => format!(
+            "/sap/bc/adt/ddic/ddl/sources/{}",
+            encode_path_segment(name.to_ascii_lowercase().as_str())
+        ),
+        "BDEF/BDO" => format!(
+            "/sap/bc/adt/bo/behaviordefinitions/{}",
+            encode_path_segment(name.to_ascii_lowercase().as_str())
+        ),
+        "SRVD/SRV" => format!(
+            "/sap/bc/adt/ddic/srvd/sources/{}",
+            encode_path_segment(name.to_ascii_lowercase().as_str())
+        ),
+        "SRVB/SVB" => format!(
+            "/sap/bc/adt/businessservices/bindings/{}",
+            encode_path_segment(name.to_ascii_lowercase().as_str())
+        ),
+        _ => String::new(),
+    }
+}
+
+fn escape_xml(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 fn encode_path_segment(value: &str) -> String {
     url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
@@ -1738,7 +2388,7 @@ mod tests {
     async fn invoke_known_but_unimplemented_tool_returns_explicit_error() {
         let facade = build_facade().await;
         let error = facade
-            .invoke("CreateObject", json!({}))
+            .invoke("ActivatePackage", json!({}))
             .await
             .expect_err("unimplemented parity tool should fail explicitly");
         assert!(matches!(error, NeuroMcpError::UnsupportedTool { .. }));

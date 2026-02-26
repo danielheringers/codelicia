@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T03:14:24.0995010Z
+- generated_at_utc: 2026-02-26T10:21:30.6855940Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 41
-- neuro_mcp_functionally_missing: 82
+- neuro_mcp_functionally_implemented: 47
+- neuro_mcp_functionally_missing: 76
 
 ## Catalog Matched
 
@@ -141,7 +141,10 @@ _none_
 
 - Activate
 - CodeCompletion
+- CreateObject
+- CreatePackage
 - CreateTestInclude
+- DeleteObject
 - FindDefinition
 - FindReferences
 - GetCalleesOf
@@ -167,14 +170,17 @@ _none_
 - GetSource
 - GetStructure
 - GetTable
+- GetTableContents
 - GetTransaction
 - GetTypeInfo
 - LockObject
 - PrettyPrint
+- PublishServiceBinding
 - SearchObject
 - SetPrettyPrinterSettings
 - SyntaxCheck
 - UnlockObject
+- UnpublishServiceBinding
 - UpdateClassInclude
 - UpdateSource
 - WriteClass
@@ -198,8 +204,6 @@ _none_
 - CompareSource
 - CreateAndActivateProgram
 - CreateClassWithTests
-- CreateObject
-- CreatePackage
 - CreateTable
 - CreateTransport
 - DebuggerAttach
@@ -209,7 +213,6 @@ _none_
 - DebuggerListen
 - DebuggerStep
 - DeleteBreakpoint
-- DeleteObject
 - DeleteTransport
 - DeployFromFile
 - EditSource
@@ -222,7 +225,6 @@ _none_
 - GetDump
 - GetSQLTraceState
 - GetSystemInfo
-- GetTableContents
 - GetTextElements
 - GetTrace
 - GetTransport
@@ -246,7 +248,6 @@ _none_
 - ListTraces
 - ListTransports
 - MoveObject
-- PublishServiceBinding
 - ReleaseTransport
 - RenameObject
 - RunATCCheck
@@ -264,4 +265,3 @@ _none_
 - UI5GetFileContent
 - UI5ListApps
 - UI5UploadFile
-- UnpublishServiceBinding
