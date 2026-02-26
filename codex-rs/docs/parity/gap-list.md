@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T01:14:51.3989679Z
+- generated_at_utc: 2026-02-26T03:09:34.9573424Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 23
-- neuro_mcp_functionally_missing: 100
+- neuro_mcp_functionally_implemented: 34
+- neuro_mcp_functionally_missing: 89
 
 ## Catalog Matched
 
@@ -140,14 +140,22 @@ _none_
 ## Functionally Implemented
 
 - Activate
+- CodeCompletion
+- FindDefinition
+- FindReferences
 - GetCDSDependencies
 - GetClass
+- GetClassInclude
+- GetConnectionInfo
+- GetFeatures
 - GetFunction
 - GetFunctionGroup
 - GetInclude
+- GetInstalledComponents
 - GetInterface
 - GetMessages
 - GetPackage
+- GetPrettyPrinterSettings
 - GetProgram
 - GetSource
 - GetStructure
@@ -155,9 +163,12 @@ _none_
 - GetTransaction
 - GetTypeInfo
 - LockObject
+- PrettyPrint
 - SearchObject
+- SetPrettyPrinterSettings
 - SyntaxCheck
 - UnlockObject
+- UpdateClassInclude
 - UpdateSource
 - WriteClass
 - WriteProgram
@@ -176,7 +187,6 @@ _none_
 - AnalyzeCallGraph
 - CallRFC
 - CloneObject
-- CodeCompletion
 - CompareCallGraphs
 - CompareSource
 - CreateAndActivateProgram
@@ -199,8 +209,6 @@ _none_
 - EditSource
 - ExecuteABAP
 - ExportToFile
-- FindDefinition
-- FindReferences
 - GetAsyncResult
 - GetATCCustomizing
 - GetBreakpoints
@@ -208,15 +216,10 @@ _none_
 - GetCallersOf
 - GetCallGraph
 - GetClassComponents
-- GetClassInclude
 - GetClassInfo
-- GetConnectionInfo
 - GetDump
-- GetFeatures
 - GetInactiveObjects
-- GetInstalledComponents
 - GetObjectStructure
-- GetPrettyPrinterSettings
 - GetSQLTraceState
 - GetSystemInfo
 - GetTableContents
@@ -243,7 +246,6 @@ _none_
 - ListTraces
 - ListTransports
 - MoveObject
-- PrettyPrint
 - PublishServiceBinding
 - ReleaseTransport
 - RenameObject
@@ -253,7 +255,6 @@ _none_
 - RunUnitTests
 - SaveToFile
 - SetBreakpoint
-- SetPrettyPrinterSettings
 - SetTextElements
 - TraceExecution
 - UI5CreateApp
@@ -264,4 +265,3 @@ _none_
 - UI5ListApps
 - UI5UploadFile
 - UnpublishServiceBinding
-- UpdateClassInclude

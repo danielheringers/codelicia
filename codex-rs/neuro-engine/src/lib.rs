@@ -105,6 +105,19 @@ impl NeuroEngine {
             .map_err(Into::into)
     }
 
+    pub async fn put_raw_text(
+        &self,
+        object_uri: &str,
+        body: Option<&str>,
+        content_type: Option<&str>,
+        accept: Option<&str>,
+    ) -> Result<String, NeuroEngineError> {
+        self.adt
+            .put_text(object_uri, body, content_type, accept)
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn diagnose(&self) -> RuntimeDiagnoseResponse {
         let adt_started = Instant::now();
         let adt_ping = self.adt.ping().await;

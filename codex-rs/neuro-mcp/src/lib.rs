@@ -180,6 +180,17 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "GetTransaction",
     "GetTypeInfo",
     "GetCDSDependencies",
+    "GetClassInclude",
+    "UpdateClassInclude",
+    "GetInstalledComponents",
+    "GetConnectionInfo",
+    "GetFeatures",
+    "PrettyPrint",
+    "GetPrettyPrinterSettings",
+    "SetPrettyPrinterSettings",
+    "FindDefinition",
+    "FindReferences",
+    "CodeCompletion",
     "LockObject",
     "UnlockObject",
     "Activate",
@@ -291,6 +302,23 @@ impl NeuroMcpFacade {
             "GetTransaction" => self.handle_get_transaction(arguments, tool_name).await,
             "GetTypeInfo" => self.handle_get_type_info(arguments, tool_name).await,
             "GetCDSDependencies" => self.handle_get_cds_dependencies(arguments, tool_name).await,
+            "GetClassInclude" => self.handle_get_class_include(arguments, tool_name).await,
+            "UpdateClassInclude" => self.handle_update_class_include(arguments, tool_name).await,
+            "GetInstalledComponents" => {
+                self.handle_get_installed_components(arguments, tool_name).await
+            }
+            "GetConnectionInfo" => self.handle_get_connection_info(arguments, tool_name).await,
+            "GetFeatures" => self.handle_get_features(arguments, tool_name).await,
+            "PrettyPrint" => self.handle_pretty_print(arguments, tool_name).await,
+            "GetPrettyPrinterSettings" => {
+                self.handle_get_pretty_printer_settings(arguments, tool_name).await
+            }
+            "SetPrettyPrinterSettings" => {
+                self.handle_set_pretty_printer_settings(arguments, tool_name).await
+            }
+            "FindDefinition" => self.handle_find_definition(arguments, tool_name).await,
+            "FindReferences" => self.handle_find_references(arguments, tool_name).await,
+            "CodeCompletion" => self.handle_code_completion(arguments, tool_name).await,
             "LockObject" => self.handle_lock_object(arguments, tool_name).await,
             "UnlockObject" => self.handle_unlock_object(arguments, tool_name).await,
             "Activate" => self.handle_activate(arguments, tool_name).await,
@@ -828,6 +856,300 @@ impl NeuroMcpFacade {
         }))
     }
 
+    async fn handle_get_class_include(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ClassIncludeArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let class_name = args.class_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "className/class_name is required".to_owned(),
+        })?;
+        let include_type = args.include_type.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "includeType/include_type is required".to_owned(),
+        })?;
+        let object_uri = build_class_include_uri(class_name.as_str(), include_type.as_str());
+        let response = self.engine.get_source(object_uri.as_str()).await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
+    async fn handle_update_class_include(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: UpdateClassIncludeArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let class_name = args.class_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "className/class_name is required".to_owned(),
+        })?;
+        let include_type = args.include_type.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "includeType/include_type is required".to_owned(),
+        })?;
+        let lock_handle = args.lock_handle.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "lockHandle/lock_handle is required".to_owned(),
+        })?;
+
+        let base_uri = build_class_include_uri(class_name.as_str(), include_type.as_str());
+        let mut query = vec![("lockHandle", lock_handle)];
+        if let Some(transport) = args.transport {
+            if !transport.trim().is_empty() {
+                query.push(("corrNr", transport));
+            }
+        }
+        let uri = build_path_with_query(base_uri.as_str(), &query);
+
+        let raw = self
+            .engine
+            .put_raw_text(
+                uri.as_str(),
+                Some(args.source.as_str()),
+                Some("text/plain; charset=utf-8"),
+                None,
+            )
+            .await?;
+        Ok(json!({
+            "objectUri": base_uri,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_installed_components(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let raw = self
+            .engine
+            .get_raw_text("/sap/bc/adt/system/components", Some("application/xml"))
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_get_connection_info(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let diagnose = self.engine.diagnose().await;
+        Ok(json!({
+            "runtime": "neuro-mcp",
+            "overallStatus": diagnose.overall_status,
+            "components": diagnose.components,
+            "metadata": diagnose.metadata,
+        }))
+    }
+
+    async fn handle_get_features(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let diagnose = self.engine.diagnose().await;
+        let adt = diagnose
+            .components
+            .iter()
+            .find(|component| component.component == "adt_http")
+            .map(|component| component.status);
+        let ws = diagnose
+            .components
+            .iter()
+            .find(|component| component.component == "neuro_ws")
+            .map(|component| component.status);
+        Ok(json!({
+            "adtHttp": adt,
+            "websocket": ws,
+            "note": "feature probing parity with VBS is pending; this is runtime-based feature visibility"
+        }))
+    }
+
+    async fn handle_pretty_print(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: PrettyPrintArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let raw = self
+            .engine
+            .post_raw_text(
+                "/sap/bc/adt/abapsource/prettyprinter",
+                Some(args.source.as_str()),
+                Some("text/plain"),
+                Some("text/plain"),
+            )
+            .await?;
+        Ok(json!({ "source": raw }))
+    }
+
+    async fn handle_get_pretty_printer_settings(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let raw = self
+            .engine
+            .get_raw_text("/sap/bc/adt/abapsource/prettyprinter/settings", None)
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_set_pretty_printer_settings(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: SetPrettyPrinterSettingsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+
+        let body = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<prettyprintersettings:PrettyPrinterSettings\nxmlns:prettyprintersettings=\"http://www.sap.com/adt/prettyprintersettings\"\nprettyprintersettings:indentation=\"{}\" prettyprintersettings:style=\"{}\"/>",
+            if args.indentation { "true" } else { "false" },
+            args.style
+        );
+        let raw = self
+            .engine
+            .put_raw_text(
+                "/sap/bc/adt/abapsource/prettyprinter/settings",
+                Some(body.as_str()),
+                Some("application/*"),
+                None,
+            )
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_find_definition(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: FindDefinitionArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let line = args.line.max(1);
+        let start_col = args.start_col.max(1);
+        let end_col = args.end_col.max(start_col);
+        let context_param = args
+            .main_program
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(|main_program| format!("?context={}", encode_query_value(main_program)))
+            .unwrap_or_default();
+        let uri = format!(
+            "{}{}#start={},{};end={},{}",
+            args.source_url, context_param, line, start_col, line, end_col
+        );
+        let filter = if args.implementation {
+            "implementation"
+        } else {
+            "definition"
+        };
+
+        let endpoint = build_path_with_query(
+            "/sap/bc/adt/navigation/target",
+            &[("uri", uri), ("filter", filter.to_owned())],
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(args.source.as_str()),
+                Some("text/plain"),
+                Some("application/*"),
+            )
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_find_references(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: FindReferencesArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let mut uri = args.object_url;
+        if let (Some(line), Some(column)) = (args.line, args.column) {
+            if line > 0 && column > 0 {
+                uri = format!("{uri}#start={line},{column}");
+            }
+        }
+        let endpoint = build_path_with_query(
+            "/sap/bc/adt/repository/informationsystem/usageReferences",
+            &[("uri", uri)],
+        );
+        let body = "<?xml version=\"1.0\" encoding=\"ASCII\"?>\n<usagereferences:usageReferenceRequest xmlns:usagereferences=\"http://www.sap.com/adt/ris/usageReferences\">\n  <usagereferences:affectedObjects/>\n</usagereferences:usageReferenceRequest>";
+        let raw = self
+            .engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(body),
+                Some("application/*"),
+                Some("application/*"),
+            )
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_code_completion(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CodeCompletionArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let line = args.line.max(1);
+        let column = args.column.max(1);
+        let uri = format!("{}#start={},{}", args.source_url, line, column);
+        let endpoint = build_path_with_query(
+            "/sap/bc/adt/abapsource/codecompletion/proposal",
+            &[("uri", uri), ("signalCompleteness", "true".to_owned())],
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(args.source.as_str()),
+                Some("application/*"),
+                None,
+            )
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
     async fn handle_ws_request(
         &self,
         arguments: Value,
@@ -944,6 +1266,73 @@ struct UpdateSourceArgs {
 }
 
 #[derive(Debug, Deserialize)]
+struct ClassIncludeArgs {
+    #[serde(default, alias = "className", alias = "name")]
+    class_name: Option<String>,
+    #[serde(default, alias = "includeType")]
+    include_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateClassIncludeArgs {
+    #[serde(default, alias = "className", alias = "name")]
+    class_name: Option<String>,
+    #[serde(default, alias = "includeType")]
+    include_type: Option<String>,
+    source: String,
+    #[serde(default, alias = "lockHandle")]
+    lock_handle: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PrettyPrintArgs {
+    source: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SetPrettyPrinterSettingsArgs {
+    indentation: bool,
+    style: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct FindDefinitionArgs {
+    #[serde(alias = "sourceUrl")]
+    source_url: String,
+    source: String,
+    line: u32,
+    #[serde(alias = "start_column", alias = "startColumn", alias = "startCol")]
+    start_col: u32,
+    #[serde(alias = "end_column", alias = "endColumn", alias = "endCol")]
+    end_col: u32,
+    #[serde(default)]
+    implementation: bool,
+    #[serde(default, alias = "mainProgram")]
+    main_program: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FindReferencesArgs {
+    #[serde(alias = "objectUrl")]
+    object_url: String,
+    #[serde(default)]
+    line: Option<u32>,
+    #[serde(default)]
+    column: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodeCompletionArgs {
+    #[serde(alias = "sourceUrl")]
+    source_url: String,
+    source: String,
+    line: u32,
+    column: u32,
+}
+
+#[derive(Debug, Deserialize)]
 struct WsRequestArgs {
     domain: String,
     action: String,
@@ -970,8 +1359,30 @@ fn encode_path_segment(value: &str) -> String {
     url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
 
+fn encode_query_value(value: &str) -> String {
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    serializer.append_pair("value", value);
+    serializer
+        .finish()
+        .strip_prefix("value=")
+        .unwrap_or_default()
+        .to_owned()
+}
+
 fn build_source_uri(path_pattern: &str, name: &str) -> String {
     path_pattern.replace("{name}", encode_path_segment(name).as_str())
+}
+
+fn build_class_include_uri(class_name: &str, include_type: &str) -> String {
+    let encoded_class_name = encode_path_segment(class_name.to_ascii_uppercase().as_str());
+    if include_type.eq_ignore_ascii_case("main") {
+        format!("/sap/bc/adt/oo/classes/{encoded_class_name}/source/main")
+    } else {
+        format!(
+            "/sap/bc/adt/oo/classes/{encoded_class_name}/includes/{}",
+            include_type.to_ascii_lowercase()
+        )
+    }
 }
 
 fn build_path_with_query(path: &str, query: &[(&str, String)]) -> String {
