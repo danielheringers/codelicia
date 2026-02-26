@@ -6282,6 +6282,7 @@ dependencies = [
 name = "neuro-mcp"
 version = "0.0.0"
 dependencies = [
+ "base64 0.22.1",
  "neuro-engine",
  "neuro-types",
  "serde",

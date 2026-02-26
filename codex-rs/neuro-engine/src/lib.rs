@@ -84,6 +84,27 @@ impl NeuroEngine {
             .map_err(Into::into)
     }
 
+    pub async fn get_raw_text(
+        &self,
+        object_uri: &str,
+        accept: Option<&str>,
+    ) -> Result<String, NeuroEngineError> {
+        self.adt.get_text(object_uri, accept).await.map_err(Into::into)
+    }
+
+    pub async fn post_raw_text(
+        &self,
+        object_uri: &str,
+        body: Option<&str>,
+        content_type: Option<&str>,
+        accept: Option<&str>,
+    ) -> Result<String, NeuroEngineError> {
+        self.adt
+            .post_text(object_uri, body, content_type, accept)
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn diagnose(&self) -> RuntimeDiagnoseResponse {
         let adt_started = Instant::now();
         let adt_ping = self.adt.ping().await;

@@ -137,6 +137,66 @@ impl AdtClient {
         })
     }
 
+    pub async fn get_text(
+        &self,
+        object_uri: &str,
+        accept: Option<&str>,
+    ) -> Result<String, AdtClientError> {
+        let url = self.build_url(object_uri)?;
+        let mut request = self.client.get(url);
+        if let Some(accept) = accept {
+            request = request.header(header::ACCEPT, accept);
+        }
+
+        let response = self.send_authenticated(request).await?;
+        let response = ensure_success("get_text", response, &[StatusCode::OK]).await?;
+        response_to_string(response).await
+    }
+
+    pub async fn post_text(
+        &self,
+        object_uri: &str,
+        body: Option<&str>,
+        content_type: Option<&str>,
+        accept: Option<&str>,
+    ) -> Result<String, AdtClientError> {
+        let url = self.build_url(object_uri)?;
+        let body = body.map(str::to_owned);
+        let content_type = content_type.map(str::to_owned);
+        let accept = accept.map(str::to_owned);
+
+        let response = self
+            .send_with_csrf_retry(Method::POST, url, move |builder| {
+                let mut request = builder;
+
+                if let Some(accept) = accept.as_deref() {
+                    request = request.header(header::ACCEPT, accept);
+                }
+                if let Some(content_type) = content_type.as_deref() {
+                    request = request.header(header::CONTENT_TYPE, content_type);
+                }
+                if let Some(body) = body.clone() {
+                    request = request.body(body);
+                }
+
+                request
+            })
+            .await?;
+
+        let response = ensure_success(
+            "post_text",
+            response,
+            &[
+                StatusCode::OK,
+                StatusCode::CREATED,
+                StatusCode::ACCEPTED,
+                StatusCode::NO_CONTENT,
+            ],
+        )
+        .await?;
+        response_to_string(response).await
+    }
+
     pub async fn update_source(
         &self,
         request: &AdtUpdateSourceRequest,
@@ -480,6 +540,14 @@ async fn ensure_success(
     })
 }
 
+async fn response_to_string(response: Response) -> Result<String, AdtClientError> {
+    let body = response.bytes().await?;
+    if body.is_empty() {
+        return Ok(String::new());
+    }
+    String::from_utf8(body.to_vec()).map_err(Into::into)
+}
+
 #[derive(Debug, Deserialize)]
 struct SearchPayload {
     #[serde(default, alias = "results", alias = "items")]
@@ -690,5 +758,50 @@ mod tests {
 
         assert_eq!(result.status_code, 204);
         assert_eq!(result.etag.as_deref(), Some("\"v2\""));
+    }
+
+    #[tokio::test]
+    async fn post_text_retries_with_csrf_token() {
+        let server = MockServer::start().await;
+        let client = test_client(server.uri());
+
+        Mock::given(method("POST"))
+            .and(path("/object/action"))
+            .and(MissingHeader("x-csrf-token"))
+            .respond_with(
+                ResponseTemplate::new(403)
+                    .insert_header("x-csrf-token", "required")
+                    .set_body_string("csrf token missing"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/csrf"))
+            .and(header("x-csrf-token", "fetch"))
+            .respond_with(ResponseTemplate::new(200).insert_header("x-csrf-token", "token-123"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/object/action"))
+            .and(header("x-csrf-token", "token-123"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let result = client
+            .post_text(
+                "/object/action",
+                Some("<x/>"),
+                Some("application/xml"),
+                Some("application/xml"),
+            )
+            .await
+            .expect("post_text should succeed after csrf retry");
+        assert_eq!(result, "ok");
     }
 }

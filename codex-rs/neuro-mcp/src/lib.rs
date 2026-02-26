@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use base64::Engine;
 use neuro_engine::{NeuroEngine, NeuroEngineError};
 use neuro_types::AdtUpdateSourceRequest;
 use serde::{Deserialize, Serialize};
@@ -171,6 +172,18 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "GetInterface",
     "GetFunction",
     "GetInclude",
+    "GetFunctionGroup",
+    "GetMessages",
+    "GetPackage",
+    "GetTable",
+    "GetStructure",
+    "GetTransaction",
+    "GetTypeInfo",
+    "GetCDSDependencies",
+    "LockObject",
+    "UnlockObject",
+    "Activate",
+    "SyntaxCheck",
     "update_source",
     "UpdateSource",
     "WriteSource",
@@ -248,6 +261,40 @@ impl NeuroMcpFacade {
                 )
                 .await,
             "GetFunction" => self.handle_get_function(arguments, tool_name).await,
+            "GetFunctionGroup" => self
+                .handle_get_raw_by_pattern(
+                    arguments,
+                    tool_name,
+                    "/sap/bc/adt/functions/groups/{name}",
+                    &["groupName", "group_name", "name"],
+                    Some("application/xml"),
+                )
+                .await,
+            "GetMessages" => self.handle_get_messages(arguments, tool_name).await,
+            "GetPackage" => self.handle_get_package(arguments, tool_name).await,
+            "GetTable" => self
+                .handle_get_source_by_pattern(
+                    arguments,
+                    tool_name,
+                    "/sap/bc/adt/ddic/tables/{name}/source/main",
+                    &["tableName", "table_name", "name"],
+                )
+                .await,
+            "GetStructure" => self
+                .handle_get_source_by_pattern(
+                    arguments,
+                    tool_name,
+                    "/sap/bc/adt/ddic/structures/{name}/source/main",
+                    &["structureName", "structure_name", "name"],
+                )
+                .await,
+            "GetTransaction" => self.handle_get_transaction(arguments, tool_name).await,
+            "GetTypeInfo" => self.handle_get_type_info(arguments, tool_name).await,
+            "GetCDSDependencies" => self.handle_get_cds_dependencies(arguments, tool_name).await,
+            "LockObject" => self.handle_lock_object(arguments, tool_name).await,
+            "UnlockObject" => self.handle_unlock_object(arguments, tool_name).await,
+            "Activate" => self.handle_activate(arguments, tool_name).await,
+            "SyntaxCheck" => self.handle_syntax_check(arguments, tool_name).await,
             "update_source" | "UpdateSource" | "WriteSource" => {
                 self.handle_update_source(arguments, tool_name).await
             }
@@ -425,6 +472,362 @@ impl NeuroMcpFacade {
         serde_json::to_value(response).map_err(Into::into)
     }
 
+    async fn handle_get_raw_by_pattern(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+        path_pattern: &str,
+        accepted_name_keys: &[&str],
+        accept: Option<&str>,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+
+        let name = args.extract_name(accepted_name_keys).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("expected one of {:?} in arguments", accepted_name_keys),
+            }
+        })?;
+
+        let object_uri = build_source_uri(path_pattern, name.as_str());
+        let raw = self.engine.get_raw_text(object_uri.as_str(), accept).await?;
+        Ok(json!({
+            "objectUri": object_uri,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_messages(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let name = args
+            .extract_name(&["messageClass", "message_class", "name"])
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "message class name is required".to_owned(),
+            })?;
+
+        let object_uri = format!(
+            "/sap/bc/adt/messageclass/{}",
+            encode_path_segment(name.to_lowercase().as_str())
+        );
+        let raw = self
+            .engine
+            .get_raw_text(object_uri.as_str(), Some("application/vnd.sap.adt.mc.messageclass+xml"))
+            .await?;
+        Ok(json!({
+            "objectUri": object_uri,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_package(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let package_name = args
+            .extract_name(&["packageName", "package_name", "name"])
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "package name is required".to_owned(),
+            })?;
+
+        let package_name = package_name.to_uppercase();
+        let path = build_path_with_query(
+            "/sap/bc/adt/repository/nodestructure",
+            &[
+                ("parent_type", "DEVC/K".to_owned()),
+                ("parent_name", package_name.clone()),
+                ("withShortDescriptions", "true".to_owned()),
+            ],
+        );
+        let raw = self.engine.post_raw_text(path.as_str(), None, None, None).await?;
+        Ok(json!({
+            "package": package_name,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_transaction(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let tcode = args
+            .extract_name(&["tcode", "transaction", "name"])
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "transaction code is required".to_owned(),
+            })?
+            .to_uppercase();
+
+        let path = format!(
+            "/sap/bc/adt/vit/wb/object_type/TRAN/object_name/{}",
+            encode_path_segment(tcode.as_str())
+        );
+        let raw = self
+            .engine
+            .get_raw_text(path.as_str(), Some("application/xml"))
+            .await?;
+        Ok(json!({
+            "transaction": tcode,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_type_info(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let type_name = args
+            .extract_name(&["typeName", "type_name", "name"])
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "type name is required".to_owned(),
+            })?
+            .to_uppercase();
+
+        let path = format!(
+            "/sap/bc/adt/ddic/dataelements/{}",
+            encode_path_segment(type_name.as_str())
+        );
+        let raw = self
+            .engine
+            .get_raw_text(path.as_str(), Some("application/xml"))
+            .await?;
+        Ok(json!({
+            "typeName": type_name,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_cds_dependencies(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let ddls = args
+            .extract_name(&["ddlsName", "ddls_name", "name"])
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "ddls name is required".to_owned(),
+            })?;
+
+        let path = build_path_with_query(
+            "/sap/bc/adt/testcodegen/dependencies/doubledata",
+            &[("ddlsourceName", ddls)],
+        );
+        let raw = self
+            .engine
+            .get_raw_text(path.as_str(), Some("application/vnd.sap.adt.codegen.data.v1+xml"))
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_lock_object(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: LockObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUrl/object_url is required".to_owned(),
+        })?;
+        let access_mode = args.access_mode.unwrap_or_else(|| "MODIFY".to_owned());
+        let path = build_path_with_query(
+            object_url.as_str(),
+            &[
+                ("_action", "LOCK".to_owned()),
+                ("accessMode", access_mode.clone()),
+            ],
+        );
+
+        let raw = self
+            .engine
+            .post_raw_text(
+                path.as_str(),
+                None,
+                None,
+                Some("application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.lock.result"),
+            )
+            .await?;
+        Ok(json!({
+            "objectUrl": object_url,
+            "accessMode": access_mode,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_unlock_object(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: UnlockObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUrl/object_url is required".to_owned(),
+        })?;
+        let lock_handle = args.lock_handle.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "lockHandle/lock_handle is required".to_owned(),
+        })?;
+
+        let path = build_path_with_query(
+            object_url.as_str(),
+            &[
+                ("_action", "UNLOCK".to_owned()),
+                ("lockHandle", lock_handle.clone()),
+            ],
+        );
+
+        let raw = self.engine.post_raw_text(path.as_str(), None, None, None).await?;
+        Ok(json!({
+            "objectUrl": object_url,
+            "lockHandle": lock_handle,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_activate(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ActivateArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUrl/object_url is required".to_owned(),
+        })?;
+        let object_name = args.object_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectName/object_name is required".to_owned(),
+        })?;
+
+        let body = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<adtcore:objectReferences xmlns:adtcore=\"http://www.sap.com/adt/core\">\n  <adtcore:objectReference adtcore:uri=\"{}\" adtcore:name=\"{}\"/>\n</adtcore:objectReferences>",
+            object_url,
+            object_name
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                "/sap/bc/adt/activation?method=activate&preauditRequested=true",
+                Some(body.as_str()),
+                Some("application/xml"),
+                None,
+            )
+            .await?;
+        Ok(json!({
+            "objectUrl": object_url,
+            "objectName": object_name,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_syntax_check(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: SyntaxCheckArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUrl/object_url is required".to_owned(),
+        })?;
+        let source_content = args.content.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "content is required".to_owned(),
+        })?;
+
+        let source_url = if object_url.contains("/includes/") {
+            object_url.clone()
+        } else {
+            format!("{object_url}/source/main")
+        };
+        let encoded = base64::engine::general_purpose::STANDARD.encode(source_content.as_bytes());
+        let body = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<chkrun:checkObjectList xmlns:chkrun=\"http://www.sap.com/adt/checkrun\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n  <chkrun:checkObject adtcore:uri=\"{}\" chkrun:version=\"active\">\n    <chkrun:artifacts>\n      <chkrun:artifact chkrun:contentType=\"text/plain; charset=utf-8\" chkrun:uri=\"{}\">\n        <chkrun:content>{}</chkrun:content>\n      </chkrun:artifact>\n    </chkrun:artifacts>\n  </chkrun:checkObject>\n</chkrun:checkObjectList>",
+            source_url,
+            source_url,
+            encoded
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                "/sap/bc/adt/checkruns?reporters=abapCheckRun",
+                Some(body.as_str()),
+                Some("application/*"),
+                None,
+            )
+            .await?;
+        Ok(json!({
+            "objectUrl": object_url,
+            "sourceUrl": source_url,
+            "raw": raw,
+        }))
+    }
+
     async fn handle_ws_request(
         &self,
         arguments: Value,
@@ -500,6 +903,38 @@ struct FunctionSourceArgs {
 }
 
 #[derive(Debug, Deserialize)]
+struct LockObjectArgs {
+    #[serde(default, alias = "objectUrl", alias = "object_url")]
+    object_url: Option<String>,
+    #[serde(default, alias = "accessMode", alias = "access_mode")]
+    access_mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UnlockObjectArgs {
+    #[serde(default, alias = "objectUrl", alias = "object_url")]
+    object_url: Option<String>,
+    #[serde(default, alias = "lockHandle", alias = "lock_handle")]
+    lock_handle: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ActivateArgs {
+    #[serde(default, alias = "objectUrl", alias = "object_url")]
+    object_url: Option<String>,
+    #[serde(default, alias = "objectName", alias = "object_name", alias = "name")]
+    object_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SyntaxCheckArgs {
+    #[serde(default, alias = "objectUrl", alias = "object_url")]
+    object_url: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct UpdateSourceArgs {
     #[serde(alias = "objectUri")]
     object_uri: String,
@@ -537,6 +972,19 @@ fn encode_path_segment(value: &str) -> String {
 
 fn build_source_uri(path_pattern: &str, name: &str) -> String {
     path_pattern.replace("{name}", encode_path_segment(name).as_str())
+}
+
+fn build_path_with_query(path: &str, query: &[(&str, String)]) -> String {
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    for (key, value) in query {
+        serializer.append_pair(key, value.as_str());
+    }
+    let encoded = serializer.finish();
+    if encoded.is_empty() {
+        path.to_owned()
+    } else {
+        format!("{path}?{encoded}")
+    }
 }
 
 #[cfg(test)]
@@ -587,7 +1035,7 @@ mod tests {
     async fn invoke_known_but_unimplemented_tool_returns_explicit_error() {
         let facade = build_facade().await;
         let error = facade
-            .invoke("Activate", json!({}))
+            .invoke("CreateObject", json!({}))
             .await
             .expect_err("unimplemented parity tool should fail explicitly");
         assert!(matches!(error, NeuroMcpError::UnsupportedTool { .. }));

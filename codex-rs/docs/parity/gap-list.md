@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T00:47:07.4576321Z
+- generated_at_utc: 2026-02-26T01:14:51.3989679Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 11
-- neuro_mcp_functionally_missing: 112
+- neuro_mcp_functionally_implemented: 23
+- neuro_mcp_functionally_missing: 100
 
 ## Catalog Matched
 
@@ -139,13 +139,25 @@ _none_
 
 ## Functionally Implemented
 
+- Activate
+- GetCDSDependencies
 - GetClass
 - GetFunction
+- GetFunctionGroup
 - GetInclude
 - GetInterface
+- GetMessages
+- GetPackage
 - GetProgram
 - GetSource
+- GetStructure
+- GetTable
+- GetTransaction
+- GetTypeInfo
+- LockObject
 - SearchObject
+- SyntaxCheck
+- UnlockObject
 - UpdateSource
 - WriteClass
 - WriteProgram
@@ -153,7 +165,6 @@ _none_
 
 ## Functionally Missing
 
-- Activate
 - ActivatePackage
 - AMDPDebuggerResume
 - AMDPDebuggerStart
@@ -196,32 +207,24 @@ _none_
 - GetCalleesOf
 - GetCallersOf
 - GetCallGraph
-- GetCDSDependencies
 - GetClassComponents
 - GetClassInclude
 - GetClassInfo
 - GetConnectionInfo
 - GetDump
 - GetFeatures
-- GetFunctionGroup
 - GetInactiveObjects
 - GetInstalledComponents
-- GetMessages
 - GetObjectStructure
-- GetPackage
 - GetPrettyPrinterSettings
 - GetSQLTraceState
-- GetStructure
 - GetSystemInfo
-- GetTable
 - GetTableContents
 - GetTextElements
 - GetTrace
-- GetTransaction
 - GetTransport
 - GetTransportInfo
 - GetTypeHierarchy
-- GetTypeInfo
 - GetUserTransports
 - GetVariants
 - GitExport
@@ -239,7 +242,6 @@ _none_
 - ListSQLTraces
 - ListTraces
 - ListTransports
-- LockObject
 - MoveObject
 - PrettyPrint
 - PublishServiceBinding
@@ -253,7 +255,6 @@ _none_
 - SetBreakpoint
 - SetPrettyPrinterSettings
 - SetTextElements
-- SyntaxCheck
 - TraceExecution
 - UI5CreateApp
 - UI5DeleteApp
@@ -262,6 +263,5 @@ _none_
 - UI5GetFileContent
 - UI5ListApps
 - UI5UploadFile
-- UnlockObject
 - UnpublishServiceBinding
 - UpdateClassInclude
