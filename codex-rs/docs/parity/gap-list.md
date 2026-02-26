@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T10:31:18.2133996Z
+- generated_at_utc: 2026-02-26T10:34:02.8919370Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 64
-- neuro_mcp_functionally_missing: 59
+- neuro_mcp_functionally_implemented: 80
+- neuro_mcp_functionally_missing: 43
 
 ## Catalog Matched
 
@@ -140,6 +140,13 @@ _none_
 ## Functionally Implemented
 
 - Activate
+- AMDPDebuggerResume
+- AMDPDebuggerStart
+- AMDPDebuggerStep
+- AMDPDebuggerStop
+- AMDPGetBreakpoints
+- AMDPGetVariables
+- AMDPSetBreakpoint
 - AnalyzeCallGraph
 - CodeCompletion
 - CompareCallGraphs
@@ -147,11 +154,19 @@ _none_
 - CreatePackage
 - CreateTestInclude
 - CreateTransport
+- DebuggerAttach
+- DebuggerDetach
+- DebuggerGetStack
+- DebuggerGetVariables
+- DebuggerListen
+- DebuggerStep
+- DeleteBreakpoint
 - DeleteObject
 - DeleteTransport
 - FindDefinition
 - FindReferences
 - GetATCCustomizing
+- GetBreakpoints
 - GetCalleesOf
 - GetCallersOf
 - GetCallGraph
@@ -193,6 +208,7 @@ _none_
 - RunReport
 - RunUnitTests
 - SearchObject
+- SetBreakpoint
 - SetPrettyPrinterSettings
 - SetTextElements
 - SyntaxCheck
@@ -207,32 +223,17 @@ _none_
 ## Functionally Missing
 
 - ActivatePackage
-- AMDPDebuggerResume
-- AMDPDebuggerStart
-- AMDPDebuggerStep
-- AMDPDebuggerStop
-- AMDPGetBreakpoints
-- AMDPGetVariables
-- AMDPSetBreakpoint
 - CallRFC
 - CloneObject
 - CompareSource
 - CreateAndActivateProgram
 - CreateClassWithTests
 - CreateTable
-- DebuggerAttach
-- DebuggerDetach
-- DebuggerGetStack
-- DebuggerGetVariables
-- DebuggerListen
-- DebuggerStep
-- DeleteBreakpoint
 - DeployFromFile
 - EditSource
 - ExecuteABAP
 - ExportToFile
 - GetAsyncResult
-- GetBreakpoints
 - GetClassInfo
 - GetDump
 - GetSQLTraceState
@@ -256,7 +257,6 @@ _none_
 - RenameObject
 - RunReportAsync
 - SaveToFile
-- SetBreakpoint
 - TraceExecution
 - UI5CreateApp
 - UI5DeleteApp

@@ -217,6 +217,22 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "GetVariants",
     "GetTextElements",
     "SetTextElements",
+    "SetBreakpoint",
+    "GetBreakpoints",
+    "DeleteBreakpoint",
+    "DebuggerListen",
+    "DebuggerAttach",
+    "DebuggerDetach",
+    "DebuggerStep",
+    "DebuggerGetStack",
+    "DebuggerGetVariables",
+    "AMDPDebuggerStart",
+    "AMDPDebuggerResume",
+    "AMDPDebuggerStop",
+    "AMDPDebuggerStep",
+    "AMDPGetVariables",
+    "AMDPSetBreakpoint",
+    "AMDPGetBreakpoints",
     "CreateObject",
     "CreatePackage",
     "DeleteObject",
@@ -375,6 +391,24 @@ impl NeuroMcpFacade {
             "GetVariants" => self.handle_get_variants(arguments, tool_name).await,
             "GetTextElements" => self.handle_get_text_elements(arguments, tool_name).await,
             "SetTextElements" => self.handle_set_text_elements(arguments, tool_name).await,
+            "SetBreakpoint" => self.handle_set_breakpoint(arguments, tool_name).await,
+            "GetBreakpoints" => self.handle_get_breakpoints(arguments, tool_name).await,
+            "DeleteBreakpoint" => self.handle_delete_breakpoint(arguments, tool_name).await,
+            "DebuggerListen" => self.handle_debugger_listen(arguments, tool_name).await,
+            "DebuggerAttach" => self.handle_debugger_attach(arguments, tool_name).await,
+            "DebuggerDetach" => self.handle_debugger_detach(arguments, tool_name).await,
+            "DebuggerStep" => self.handle_debugger_step(arguments, tool_name).await,
+            "DebuggerGetStack" => self.handle_debugger_get_stack(arguments, tool_name).await,
+            "DebuggerGetVariables" => {
+                self.handle_debugger_get_variables(arguments, tool_name).await
+            }
+            "AMDPDebuggerStart" => self.handle_amdp_start(arguments, tool_name).await,
+            "AMDPDebuggerResume" => self.handle_amdp_resume(arguments, tool_name).await,
+            "AMDPDebuggerStop" => self.handle_amdp_stop(arguments, tool_name).await,
+            "AMDPDebuggerStep" => self.handle_amdp_step(arguments, tool_name).await,
+            "AMDPGetVariables" => self.handle_amdp_get_variables(arguments, tool_name).await,
+            "AMDPSetBreakpoint" => self.handle_amdp_set_breakpoint(arguments, tool_name).await,
+            "AMDPGetBreakpoints" => self.handle_amdp_get_breakpoints(arguments, tool_name).await,
             "CreateObject" => self.handle_create_object(arguments, tool_name).await,
             "CreatePackage" => self.handle_create_package(arguments, tool_name).await,
             "DeleteObject" => self.handle_delete_object(arguments, tool_name).await,
@@ -2444,6 +2478,250 @@ impl NeuroMcpFacade {
         serde_json::to_value(response).map_err(Into::into)
     }
 
+    async fn handle_set_breakpoint(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        if !arguments.is_object() {
+            return Err(NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "arguments must be a JSON object".to_owned(),
+            });
+        }
+        self.handle_debug_ws_call("setBreakpoint", arguments).await
+    }
+
+    async fn handle_get_breakpoints(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        self.handle_debug_ws_call("getBreakpoints", json!({})).await
+    }
+
+    async fn handle_delete_breakpoint(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: BreakpointIdArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let breakpoint_id = args.breakpoint_id.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "breakpoint_id is required".to_owned(),
+        })?;
+        self.handle_debug_ws_call("deleteBreakpoint", json!({ "breakpointId": breakpoint_id }))
+            .await
+    }
+
+    async fn handle_debugger_listen(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: DebuggerListenArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let timeout = args.timeout.unwrap_or(60).clamp(1, 240);
+        let user = std::env::var("NEURO_SAP_USER")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_uppercase();
+        let payload = if user.is_empty() {
+            json!({ "timeout": timeout })
+        } else {
+            json!({ "timeout": timeout, "user": user })
+        };
+        self.handle_debug_ws_call("listen", payload).await
+    }
+
+    async fn handle_debugger_attach(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: DebuggeeArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let debuggee_id = args.debuggee_id.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "debuggee_id is required".to_owned(),
+        })?;
+        self.handle_debug_ws_call("attach", json!({ "debuggeeId": debuggee_id }))
+            .await
+    }
+
+    async fn handle_debugger_detach(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        self.handle_debug_ws_call("detach", json!({})).await
+    }
+
+    async fn handle_debugger_step(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: StepArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let step_type = args.step_type.unwrap_or_else(|| "into".to_owned());
+        self.handle_debug_ws_call("step", json!({ "type": step_type })).await
+    }
+
+    async fn handle_debugger_get_stack(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        self.handle_debug_ws_call("getStack", json!({})).await
+    }
+
+    async fn handle_debugger_get_variables(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: VariablesScopeArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let scope = args.scope.unwrap_or_else(|| "system".to_owned());
+        self.handle_debug_ws_call("getVariables", json!({ "scope": scope }))
+            .await
+    }
+
+    async fn handle_amdp_start(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: AmdpStartArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let cascade_mode = args.cascade_mode.unwrap_or_else(|| "FULL".to_owned());
+        let user = std::env::var("NEURO_SAP_USER")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_uppercase();
+        let payload = if user.is_empty() {
+            json!({ "cascadeMode": cascade_mode })
+        } else {
+            json!({ "cascadeMode": cascade_mode, "user": user })
+        };
+        self.handle_amdp_ws_call("start", payload).await
+    }
+
+    async fn handle_amdp_resume(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        self.handle_amdp_ws_call("resume", json!({})).await
+    }
+
+    async fn handle_amdp_stop(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        self.handle_amdp_ws_call("stop", json!({})).await
+    }
+
+    async fn handle_amdp_step(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: StepArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let step_type = args.step_type.unwrap_or_else(|| "over".to_owned());
+        self.handle_amdp_ws_call("step", json!({ "type": step_type }))
+            .await
+    }
+
+    async fn handle_amdp_get_variables(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        self.handle_amdp_ws_call("getVariables", json!({})).await
+    }
+
+    async fn handle_amdp_set_breakpoint(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: AmdpBreakpointArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+        let program = args.program.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "program is required".to_owned(),
+        })?;
+        let line = args.line.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "line is required".to_owned(),
+        })?;
+        self.handle_amdp_ws_call("setBreakpoint", json!({ "program": program, "line": line }))
+            .await
+    }
+
+    async fn handle_amdp_get_breakpoints(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        self.handle_amdp_ws_call("getBreakpoints", json!({})).await
+    }
+
+    async fn handle_debug_ws_call(
+        &self,
+        action: &str,
+        payload: Value,
+    ) -> Result<Value, NeuroMcpError> {
+        let response = self.engine.send_domain_request("debug", action, payload).await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
+    async fn handle_amdp_ws_call(
+        &self,
+        action: &str,
+        payload: Value,
+    ) -> Result<Value, NeuroMcpError> {
+        let response = self.engine.send_domain_request("amdp", action, payload).await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
     async fn handle_ws_request(
         &self,
         arguments: Value,
@@ -2692,6 +2970,50 @@ struct SetTextElementsArgs {
     text_symbols: Option<Value>,
     #[serde(default)]
     heading_texts: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BreakpointIdArgs {
+    #[serde(default, alias = "breakpointId", alias = "breakpoint_id")]
+    breakpoint_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DebuggerListenArgs {
+    #[serde(default)]
+    timeout: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DebuggeeArgs {
+    #[serde(default, alias = "debuggeeId", alias = "debuggee_id")]
+    debuggee_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StepArgs {
+    #[serde(default, alias = "type", alias = "stepType", alias = "step_type")]
+    step_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VariablesScopeArgs {
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AmdpStartArgs {
+    #[serde(default, alias = "cascadeMode", alias = "cascade_mode")]
+    cascade_mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AmdpBreakpointArgs {
+    #[serde(default)]
+    program: Option<String>,
+    #[serde(default)]
+    line: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
