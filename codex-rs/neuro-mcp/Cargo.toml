@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 neuro-engine.workspace = true
+neuro-types.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true

@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use neuro_engine::NeuroEngine;
 use neuro_types::{
-    AdtAuth, AdtHttpConfig, AdtHttpEndpoints, NeuroEngineConfig, SafetyPolicy, WsClientConfig,
+    AdtAuth, AdtHttpConfig, AdtHttpEndpoints, AdtUpdateSourceRequest, NeuroEngineConfig,
+    SafetyPolicy, WsClientConfig,
 };
 
 #[derive(Debug, Parser)]
@@ -53,6 +56,28 @@ enum Command {
         #[arg(long)]
         max_results: Option<u32>,
     },
+    GetSource {
+        #[arg(long)]
+        object_uri: String,
+    },
+    UpdateSource {
+        #[arg(long)]
+        object_uri: String,
+        #[arg(long)]
+        source: Option<String>,
+        #[arg(long)]
+        source_file: Option<PathBuf>,
+        #[arg(long)]
+        etag: Option<String>,
+    },
+    WsRequest {
+        #[arg(long)]
+        domain: String,
+        #[arg(long)]
+        action: String,
+        #[arg(long, default_value = "{}")]
+        payload_json: String,
+    },
 }
 
 #[tokio::main]
@@ -70,9 +95,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let objects = engine.search(query.as_str(), max_results).await?;
             println!("{}", serde_json::to_string_pretty(&objects)?);
         }
+        Command::GetSource { object_uri } => {
+            let source = engine.get_source(object_uri.as_str()).await?;
+            println!("{}", serde_json::to_string_pretty(&source)?);
+        }
+        Command::UpdateSource {
+            object_uri,
+            source,
+            source_file,
+            etag,
+        } => {
+            let source = resolve_source_payload(source, source_file)?;
+            let response = engine
+                .update_source(AdtUpdateSourceRequest {
+                    object_uri,
+                    source,
+                    etag,
+                })
+                .await?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+        }
+        Command::WsRequest {
+            domain,
+            action,
+            payload_json,
+        } => {
+            let payload: serde_json::Value = serde_json::from_str(payload_json.as_str())?;
+            let response = engine
+                .send_domain_request(domain.as_str(), action.as_str(), payload)
+                .await?;
+            println!("{}", serde_json::to_string_pretty(&response)?);
+        }
     }
 
     Ok(())
+}
+
+fn resolve_source_payload(
+    source: Option<String>,
+    source_file: Option<PathBuf>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    match (source, source_file) {
+        (Some(source), None) => Ok(source),
+        (None, Some(path)) => Ok(fs::read_to_string(path)?),
+        (Some(_), Some(_)) => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "provide only one of --source or --source-file",
+        )
+        .into()),
+        (None, None) => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "one of --source or --source-file is required",
+        )
+        .into()),
+    }
 }
 
 fn build_engine_config(cli: &Cli) -> NeuroEngineConfig {
