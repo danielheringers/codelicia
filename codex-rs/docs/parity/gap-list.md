@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T00:44:59.7946013Z
+- generated_at_utc: 2026-02-26T00:47:07.4576321Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 4
-- neuro_mcp_functionally_missing: 119
+- neuro_mcp_functionally_implemented: 11
+- neuro_mcp_functionally_missing: 112
 
 ## Catalog Matched
 
@@ -139,9 +139,16 @@ _none_
 
 ## Functionally Implemented
 
+- GetClass
+- GetFunction
+- GetInclude
+- GetInterface
+- GetProgram
 - GetSource
 - SearchObject
 - UpdateSource
+- WriteClass
+- WriteProgram
 - WriteSource
 
 ## Functionally Missing
@@ -190,24 +197,19 @@ _none_
 - GetCallersOf
 - GetCallGraph
 - GetCDSDependencies
-- GetClass
 - GetClassComponents
 - GetClassInclude
 - GetClassInfo
 - GetConnectionInfo
 - GetDump
 - GetFeatures
-- GetFunction
 - GetFunctionGroup
 - GetInactiveObjects
-- GetInclude
 - GetInstalledComponents
-- GetInterface
 - GetMessages
 - GetObjectStructure
 - GetPackage
 - GetPrettyPrinterSettings
-- GetProgram
 - GetSQLTraceState
 - GetStructure
 - GetSystemInfo
@@ -263,5 +265,3 @@ _none_
 - UnlockObject
 - UnpublishServiceBinding
 - UpdateClassInclude
-- WriteClass
-- WriteProgram

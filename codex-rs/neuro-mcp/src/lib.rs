@@ -166,9 +166,16 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "SearchObject",
     "get_source",
     "GetSource",
+    "GetProgram",
+    "GetClass",
+    "GetInterface",
+    "GetFunction",
+    "GetInclude",
     "update_source",
     "UpdateSource",
     "WriteSource",
+    "WriteProgram",
+    "WriteClass",
     "ws_request",
 ];
 
@@ -208,9 +215,58 @@ impl NeuroMcpFacade {
             "diagnose" => self.handle_diagnose().await,
             "search" | "SearchObject" => self.handle_search(arguments, tool_name).await,
             "get_source" | "GetSource" => self.handle_get_source(arguments, tool_name).await,
+            "GetProgram" => self
+                .handle_get_source_by_pattern(
+                    arguments,
+                    tool_name,
+                    "/sap/bc/adt/programs/programs/{name}/source/main",
+                    &["programName", "program_name", "name"],
+                )
+                .await,
+            "GetClass" => self
+                .handle_get_source_by_pattern(
+                    arguments,
+                    tool_name,
+                    "/sap/bc/adt/oo/classes/{name}/source/main",
+                    &["className", "class_name", "name"],
+                )
+                .await,
+            "GetInterface" => self
+                .handle_get_source_by_pattern(
+                    arguments,
+                    tool_name,
+                    "/sap/bc/adt/oo/interfaces/{name}/source/main",
+                    &["interfaceName", "interface_name", "name"],
+                )
+                .await,
+            "GetInclude" => self
+                .handle_get_source_by_pattern(
+                    arguments,
+                    tool_name,
+                    "/sap/bc/adt/programs/includes/{name}/source/main",
+                    &["includeName", "include_name", "name"],
+                )
+                .await,
+            "GetFunction" => self.handle_get_function(arguments, tool_name).await,
             "update_source" | "UpdateSource" | "WriteSource" => {
                 self.handle_update_source(arguments, tool_name).await
             }
+            "WriteProgram" => self
+                .handle_update_source_by_pattern(
+                    arguments,
+                    tool_name,
+                    "/sap/bc/adt/programs/programs/{name}/source/main",
+                    &["programName", "program_name", "name"],
+                )
+                .await,
+            "WriteClass" => self
+                .handle_update_source_by_pattern(
+                    arguments,
+                    tool_name,
+                    "/sap/bc/adt/oo/classes/{name}/source/main",
+                    &["className", "class_name", "name"],
+                )
+                .await,
             "ws_request" => self.handle_ws_request(arguments, tool_name).await,
             _ => {
                 if self.registry.contains_key(tool_name) && !is_implemented_tool(tool_name) {
@@ -257,6 +313,31 @@ impl NeuroMcpFacade {
         serde_json::to_value(response).map_err(Into::into)
     }
 
+    async fn handle_get_source_by_pattern(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+        path_pattern: &str,
+        accepted_name_keys: &[&str],
+    ) -> Result<Value, NeuroMcpError> {
+        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+
+        let name = args.extract_name(accepted_name_keys).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("expected one of {:?} in arguments", accepted_name_keys),
+            }
+        })?;
+        let object_uri = build_source_uri(path_pattern, name.as_str());
+        let response = self.engine.get_source(object_uri.as_str()).await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
     async fn handle_update_source(
         &self,
         arguments: Value,
@@ -277,6 +358,70 @@ impl NeuroMcpFacade {
                 etag: args.etag,
             })
             .await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
+    async fn handle_update_source_by_pattern(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+        path_pattern: &str,
+        accepted_name_keys: &[&str],
+    ) -> Result<Value, NeuroMcpError> {
+        let args: NamedSourceArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+
+        let name = args.extract_name(accepted_name_keys).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("expected one of {:?} in arguments", accepted_name_keys),
+            }
+        })?;
+        let object_uri = build_source_uri(path_pattern, name.as_str());
+
+        let response = self
+            .engine
+            .update_source(AdtUpdateSourceRequest {
+                object_uri,
+                source: args.source,
+                etag: args.etag,
+            })
+            .await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
+    async fn handle_get_function(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: FunctionSourceArgs = serde_json::from_value(arguments).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            }
+        })?;
+
+        let function_name = args.function_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "function name is required".to_owned(),
+        })?;
+        let group_name = args.group_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "group name is required".to_owned(),
+        })?;
+
+        let object_uri = format!(
+            "/sap/bc/adt/functions/groups/{}/fmodules/{}/source/main",
+            encode_path_segment(group_name.as_str()),
+            encode_path_segment(function_name.as_str())
+        );
+
+        let response = self.engine.get_source(object_uri.as_str()).await?;
         serde_json::to_value(response).map_err(Into::into)
     }
 
@@ -314,9 +459,44 @@ struct SearchArgs {
 }
 
 #[derive(Debug, Deserialize)]
+struct NamedObjectArgs {
+    #[serde(flatten)]
+    fields: BTreeMap<String, Value>,
+}
+
+impl NamedObjectArgs {
+    fn extract_name(&self, keys: &[&str]) -> Option<String> {
+        extract_non_empty_string(&self.fields, keys)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct NamedSourceArgs {
+    #[serde(flatten)]
+    fields: BTreeMap<String, Value>,
+    source: String,
+    #[serde(default)]
+    etag: Option<String>,
+}
+
+impl NamedSourceArgs {
+    fn extract_name(&self, keys: &[&str]) -> Option<String> {
+        extract_non_empty_string(&self.fields, keys)
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct GetSourceArgs {
     #[serde(alias = "objectUri")]
     object_uri: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct FunctionSourceArgs {
+    #[serde(default, alias = "functionName", alias = "function_name", alias = "name")]
+    function_name: Option<String>,
+    #[serde(default, alias = "groupName", alias = "group_name", alias = "functionGroup")]
+    group_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -334,6 +514,29 @@ struct WsRequestArgs {
     action: String,
     #[serde(default)]
     payload: Value,
+}
+
+fn extract_non_empty_string(fields: &BTreeMap<String, Value>, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        fields.get(*key).and_then(|value| {
+            value.as_str().and_then(|text| {
+                let trimmed = text.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_owned())
+                }
+            })
+        })
+    })
+}
+
+fn encode_path_segment(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
+}
+
+fn build_source_uri(path_pattern: &str, name: &str) -> String {
+    path_pattern.replace("{name}", encode_path_segment(name).as_str())
 }
 
 #[cfg(test)]
