@@ -185,6 +185,9 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "CreateTestInclude",
     "GetObjectStructure",
     "GetClassComponents",
+    "GetCallGraph",
+    "GetCallersOf",
+    "GetCalleesOf",
     "GetInstalledComponents",
     "GetConnectionInfo",
     "GetFeatures",
@@ -310,6 +313,9 @@ impl NeuroMcpFacade {
             "CreateTestInclude" => self.handle_create_test_include(arguments, tool_name).await,
             "GetObjectStructure" => self.handle_get_object_structure(arguments, tool_name).await,
             "GetClassComponents" => self.handle_get_class_components(arguments, tool_name).await,
+            "GetCallGraph" => self.handle_get_call_graph(arguments, tool_name).await,
+            "GetCallersOf" => self.handle_get_callers_of(arguments, tool_name).await,
+            "GetCalleesOf" => self.handle_get_callees_of(arguments, tool_name).await,
             "GetInstalledComponents" => {
                 self.handle_get_installed_components(arguments, tool_name).await
             }
@@ -1065,6 +1071,120 @@ impl NeuroMcpFacade {
         }))
     }
 
+    async fn handle_get_call_graph(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetCallGraphArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_uri = args.object_uri.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUri/object_uri is required".to_owned(),
+        })?;
+        let direction = args.direction.unwrap_or_else(|| "callers".to_owned());
+        let max_depth = args.max_depth.unwrap_or(3).max(1);
+        let max_results = args.max_results.unwrap_or(100).max(1);
+
+        let raw = self
+            .request_call_graph(object_uri.as_str(), direction.as_str(), max_depth, max_results)
+            .await?;
+        Ok(json!({
+            "objectUri": object_uri,
+            "direction": direction,
+            "maxDepth": max_depth,
+            "maxResults": max_results,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_callers_of(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetCallTraversalArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_uri = args.object_uri.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUri/object_uri is required".to_owned(),
+        })?;
+        let max_depth = args.max_depth.unwrap_or(5).max(1);
+        let raw = self
+            .request_call_graph(object_uri.as_str(), "callers", max_depth, 500)
+            .await?;
+        Ok(json!({
+            "objectUri": object_uri,
+            "direction": "callers",
+            "maxDepth": max_depth,
+            "maxResults": 500,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_callees_of(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetCallTraversalArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_uri = args.object_uri.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUri/object_uri is required".to_owned(),
+        })?;
+        let max_depth = args.max_depth.unwrap_or(5).max(1);
+        let raw = self
+            .request_call_graph(object_uri.as_str(), "callees", max_depth, 500)
+            .await?;
+        Ok(json!({
+            "objectUri": object_uri,
+            "direction": "callees",
+            "maxDepth": max_depth,
+            "maxResults": 500,
+            "raw": raw,
+        }))
+    }
+
+    async fn request_call_graph(
+        &self,
+        object_uri: &str,
+        direction: &str,
+        max_depth: u32,
+        max_results: u32,
+    ) -> Result<String, NeuroMcpError> {
+        let endpoint = build_path_with_query(
+            "/sap/bc/adt/cai/callgraph",
+            &[
+                ("direction", direction.to_owned()),
+                ("maxDepth", max_depth.to_string()),
+                ("maxResults", max_results.to_string()),
+            ],
+        );
+        let body = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<cai:callGraphRequest xmlns:cai=\"http://www.sap.com/adt/cai\">\n  <cai:objectUri>{}</cai:objectUri>\n</cai:callGraphRequest>",
+            object_uri
+        );
+        self.engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(body.as_str()),
+                Some("application/xml"),
+                Some("application/xml"),
+            )
+            .await
+            .map_err(Into::into)
+    }
+
     async fn handle_get_features(
         &self,
         _arguments: Value,
@@ -1424,6 +1544,26 @@ struct GetObjectStructureArgs {
 struct GetClassComponentsArgs {
     #[serde(alias = "classUrl")]
     class_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetCallGraphArgs {
+    #[serde(default, alias = "objectUri")]
+    object_uri: Option<String>,
+    #[serde(default)]
+    direction: Option<String>,
+    #[serde(default, alias = "maxDepth")]
+    max_depth: Option<u32>,
+    #[serde(default, alias = "maxResults")]
+    max_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetCallTraversalArgs {
+    #[serde(default, alias = "objectUri")]
+    object_uri: Option<String>,
+    #[serde(default, alias = "maxDepth")]
+    max_depth: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
