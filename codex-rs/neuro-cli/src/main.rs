@@ -16,7 +16,10 @@ struct Cli {
     adt_timeout_secs: u64,
     #[arg(long, default_value = "/sap/bc/adt")]
     adt_csrf_fetch_path: String,
-    #[arg(long, default_value = "/sap/bc/adt/discovery/search")]
+    #[arg(
+        long,
+        default_value = "/sap/bc/adt/repository/informationsystem/search?operation=quickSearch"
+    )]
     adt_search_path: String,
 
     #[arg(long, conflicts_with = "adt_cookie", requires = "adt_password")]

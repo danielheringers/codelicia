@@ -103,7 +103,9 @@ mod tests {
                 timeout_secs: 1,
                 csrf_fetch_path: "/sap/bc/adt".to_string(),
                 endpoints: AdtHttpEndpoints {
-                    search_objects_path: "/sap/bc/adt/discovery/search".to_string(),
+                    search_objects_path:
+                        "/sap/bc/adt/repository/informationsystem/search?operation=quickSearch"
+                            .to_string(),
                 },
                 insecure_tls: false,
                 sap_client: None,

@@ -261,7 +261,9 @@ mod tests {
             timeout_secs: 1,
             csrf_fetch_path: "/sap/bc/adt".to_string(),
             endpoints: AdtHttpEndpoints {
-                search_objects_path: "/sap/bc/adt/discovery/search".to_string(),
+                search_objects_path:
+                    "/sap/bc/adt/repository/informationsystem/search?operation=quickSearch"
+                        .to_string(),
             },
             insecure_tls: false,
             sap_client: None,
@@ -397,8 +399,12 @@ mod tests {
                 csrf_fetch_path: env::var("NEURO_SMOKE_ADT_CSRF_FETCH_PATH")
                     .unwrap_or_else(|_| "/sap/bc/adt".to_owned()),
                 endpoints: AdtHttpEndpoints {
-                    search_objects_path: env::var("NEURO_SMOKE_ADT_SEARCH_PATH")
-                        .unwrap_or_else(|_| "/sap/bc/adt/discovery/search".to_owned()),
+                    search_objects_path: env::var("NEURO_SMOKE_ADT_SEARCH_PATH").unwrap_or_else(
+                        |_| {
+                            "/sap/bc/adt/repository/informationsystem/search?operation=quickSearch"
+                                .to_owned()
+                        },
+                    ),
                 },
                 insecure_tls: env::var("NEURO_SMOKE_ADT_INSECURE_TLS")
                     .ok()

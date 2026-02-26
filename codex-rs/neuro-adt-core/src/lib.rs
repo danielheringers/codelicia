@@ -425,7 +425,9 @@ mod tests {
             timeout_secs: 5,
             csrf_fetch_path: "/sap/bc/adt".to_string(),
             endpoints: neuro_types::AdtHttpEndpoints {
-                search_objects_path: "/sap/bc/adt/discovery/search".to_string(),
+                search_objects_path:
+                    "/sap/bc/adt/repository/informationsystem/search?operation=quickSearch"
+                        .to_string(),
             },
             insecure_tls: false,
             sap_client: Some("100".to_string()),
@@ -434,7 +436,7 @@ mod tests {
         .expect("client should build");
 
         let url = client
-            .build_url("/sap/bc/adt/discovery/search")
+            .build_url("/sap/bc/adt/repository/informationsystem/search?operation=quickSearch")
             .expect("url should be built");
         let query = url.query().unwrap_or_default();
 

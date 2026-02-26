@@ -288,7 +288,7 @@ fn default_csrf_fetch_path() -> String {
 }
 
 fn default_search_path() -> String {
-    "/sap/bc/adt/discovery/search".to_owned()
+    "/sap/bc/adt/repository/informationsystem/search?operation=quickSearch".to_owned()
 }
 
 const fn default_ws_timeout_secs() -> u64 {
