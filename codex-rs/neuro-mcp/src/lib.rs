@@ -182,6 +182,9 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "GetCDSDependencies",
     "GetClassInclude",
     "UpdateClassInclude",
+    "CreateTestInclude",
+    "GetObjectStructure",
+    "GetClassComponents",
     "GetInstalledComponents",
     "GetConnectionInfo",
     "GetFeatures",
@@ -304,6 +307,9 @@ impl NeuroMcpFacade {
             "GetCDSDependencies" => self.handle_get_cds_dependencies(arguments, tool_name).await,
             "GetClassInclude" => self.handle_get_class_include(arguments, tool_name).await,
             "UpdateClassInclude" => self.handle_update_class_include(arguments, tool_name).await,
+            "CreateTestInclude" => self.handle_create_test_include(arguments, tool_name).await,
+            "GetObjectStructure" => self.handle_get_object_structure(arguments, tool_name).await,
+            "GetClassComponents" => self.handle_get_class_components(arguments, tool_name).await,
             "GetInstalledComponents" => {
                 self.handle_get_installed_components(arguments, tool_name).await
             }
@@ -954,6 +960,111 @@ impl NeuroMcpFacade {
         }))
     }
 
+    async fn handle_create_test_include(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CreateTestIncludeArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let class_name = args.class_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "className/class_name is required".to_owned(),
+        })?;
+        let lock_handle = args.lock_handle.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "lockHandle/lock_handle is required".to_owned(),
+        })?;
+
+        let encoded_class_name = encode_path_segment(class_name.to_ascii_uppercase().as_str());
+        let includes_path = format!("/sap/bc/adt/oo/classes/{encoded_class_name}/includes");
+        let mut query = vec![("lockHandle", lock_handle)];
+        if let Some(transport) = args.transport {
+            if !transport.trim().is_empty() {
+                query.push(("corrNr", transport));
+            }
+        }
+        let endpoint = build_path_with_query(includes_path.as_str(), &query);
+        let body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<class:abapClassInclude xmlns:class=\"http://www.sap.com/adt/oo/classes\"\n  xmlns:adtcore=\"http://www.sap.com/adt/core\"\n  adtcore:name=\"dummy\" class:includeType=\"testclasses\"/>";
+        let raw = self
+            .engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(body),
+                Some("application/*"),
+                None,
+            )
+            .await?;
+        Ok(json!({
+            "className": class_name,
+            "includeType": "testclasses",
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_object_structure(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetObjectStructureArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_name = args.object_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectName/object_name is required".to_owned(),
+        })?;
+        let max_results = args.max_results.unwrap_or(100).max(1);
+        let endpoint = build_path_with_query(
+            "/sap/bc/adt/cai/objectexplorer/objects",
+            &[
+                ("objectName", object_name.clone()),
+                ("maxResults", max_results.to_string()),
+            ],
+        );
+        let raw = self
+            .engine
+            .get_raw_text(endpoint.as_str(), Some("application/xml"))
+            .await?;
+        Ok(json!({
+            "objectName": object_name,
+            "maxResults": max_results,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_class_components(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetClassComponentsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let endpoint = build_path_with_query(
+            format!("{}/objectstructure", args.class_url).as_str(),
+            &[
+                ("version", "active".to_owned()),
+                ("withShortDescriptions", "true".to_owned()),
+            ],
+        );
+        let raw = self
+            .engine
+            .get_raw_text(endpoint.as_str(), Some("application/*"))
+            .await?;
+        Ok(json!({
+            "classUrl": args.class_url,
+            "raw": raw,
+        }))
+    }
+
     async fn handle_get_features(
         &self,
         _arguments: Value,
@@ -1287,8 +1398,32 @@ struct UpdateClassIncludeArgs {
 }
 
 #[derive(Debug, Deserialize)]
+struct CreateTestIncludeArgs {
+    #[serde(default, alias = "className", alias = "name")]
+    class_name: Option<String>,
+    #[serde(default, alias = "lockHandle")]
+    lock_handle: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct PrettyPrintArgs {
     source: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetObjectStructureArgs {
+    #[serde(default, alias = "objectName", alias = "name")]
+    object_name: Option<String>,
+    #[serde(default, alias = "maxResults")]
+    max_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetClassComponentsArgs {
+    #[serde(alias = "classUrl")]
+    class_url: String,
 }
 
 #[derive(Debug, Deserialize)]
