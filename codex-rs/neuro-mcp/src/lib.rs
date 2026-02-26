@@ -190,7 +190,10 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "GetCallGraph",
     "GetCallersOf",
     "GetCalleesOf",
+    "AnalyzeCallGraph",
+    "CompareCallGraphs",
     "GetInactiveObjects",
+    "GetSystemInfo",
     "GetInstalledComponents",
     "GetATCCustomizing",
     "GetConnectionInfo",
@@ -335,11 +338,14 @@ impl NeuroMcpFacade {
             "GetCallGraph" => self.handle_get_call_graph(arguments, tool_name).await,
             "GetCallersOf" => self.handle_get_callers_of(arguments, tool_name).await,
             "GetCalleesOf" => self.handle_get_callees_of(arguments, tool_name).await,
+            "AnalyzeCallGraph" => self.handle_analyze_call_graph(arguments, tool_name).await,
+            "CompareCallGraphs" => self.handle_compare_call_graphs(arguments, tool_name).await,
             "GetInactiveObjects" => self.handle_get_inactive_objects(arguments, tool_name).await,
             "GetInstalledComponents" => {
                 self.handle_get_installed_components(arguments, tool_name).await
             }
             "GetATCCustomizing" => self.handle_get_atc_customizing(arguments, tool_name).await,
+            "GetSystemInfo" => self.handle_get_system_info(arguments, tool_name).await,
             "GetConnectionInfo" => self.handle_get_connection_info(arguments, tool_name).await,
             "GetFeatures" => self.handle_get_features(arguments, tool_name).await,
             "PrettyPrint" => self.handle_pretty_print(arguments, tool_name).await,
@@ -1503,6 +1509,76 @@ impl NeuroMcpFacade {
         }))
     }
 
+    async fn handle_analyze_call_graph(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: AnalyzeCallGraphArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_uri = args.object_uri.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUri/object_uri is required".to_owned(),
+        })?;
+        let direction = args.direction.unwrap_or_else(|| "callees".to_owned());
+        let max_depth = args.max_depth.unwrap_or(5).max(1);
+        let max_results = 1000;
+
+        let raw = self
+            .request_call_graph(object_uri.as_str(), direction.as_str(), max_depth, max_results)
+            .await?;
+        Ok(json!({
+            "objectUri": object_uri,
+            "direction": direction,
+            "maxDepth": max_depth,
+            "maxResults": max_results,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_compare_call_graphs(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CompareCallGraphsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_uri = args.object_uri.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUri/object_uri is required".to_owned(),
+        })?;
+        let trace_data = args.trace_data.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "trace_data is required".to_owned(),
+        })?;
+        let actual_edges: Value =
+            serde_json::from_str(trace_data.as_str()).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("trace_data must be valid JSON: {error}"),
+            })?;
+        let actual_edges_count = actual_edges
+            .as_array()
+            .map(|items| items.len())
+            .unwrap_or(0);
+
+        let static_call_graph = self
+            .request_call_graph(object_uri.as_str(), "callees", 10, 1000)
+            .await?;
+        Ok(json!({
+            "objectUri": object_uri,
+            "actualEdgesCount": actual_edges_count,
+            "actualEdges": actual_edges,
+            "staticCallGraph": static_call_graph,
+            "note": "static vs actual edge comparison metrics are pending parser parity with VBS"
+        }))
+    }
+
     async fn request_call_graph(
         &self,
         object_uri: &str,
@@ -1546,6 +1622,64 @@ impl NeuroMcpFacade {
             )
             .await?;
         Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_get_system_info(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let sap_client = std::env::var("NEURO_SAP_CLIENT").unwrap_or_default();
+        let client_query = if sap_client.trim().is_empty() {
+            "SELECT MANDT, MTEXT, LOGSYS FROM T000".to_owned()
+        } else {
+            format!(
+                "SELECT MANDT, MTEXT, LOGSYS FROM T000 WHERE MANDT = '{}'",
+                sap_client.trim()
+            )
+        };
+        let client_info = self.run_freestyle_query(client_query.as_str(), 1).await?;
+        let sap_basis = self
+            .run_freestyle_query(
+                "SELECT RELEASE, EXTRELEASE FROM CVERS WHERE COMPONENT = 'SAP_BASIS'",
+                1,
+            )
+            .await?;
+        let sap_aba = self
+            .run_freestyle_query("SELECT RELEASE FROM CVERS WHERE COMPONENT = 'SAP_ABA'", 1)
+            .await?;
+        let hana = self
+            .run_freestyle_query(
+                "SELECT RELEASE FROM CVERS WHERE COMPONENT LIKE '%HDB%' OR COMPONENT LIKE '%HANA%'",
+                1,
+            )
+            .await?;
+
+        Ok(json!({
+            "client": sap_client,
+            "queries": {
+                "t000": client_info,
+                "sap_basis": sap_basis,
+                "sap_aba": sap_aba,
+                "hana": hana,
+            }
+        }))
+    }
+
+    async fn run_freestyle_query(&self, query: &str, max_rows: u32) -> Result<String, NeuroMcpError> {
+        let endpoint = build_path_with_query(
+            "/sap/bc/adt/datapreview/freestyle",
+            &[("rowNumber", max_rows.max(1).to_string())],
+        );
+        self.engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(query),
+                Some("text/plain"),
+                Some("application/*"),
+            )
+            .await
+            .map_err(Into::into)
     }
 
     async fn handle_get_atc_customizing(
@@ -2505,6 +2639,24 @@ struct GetCallTraversalArgs {
     object_uri: Option<String>,
     #[serde(default, alias = "maxDepth")]
     max_depth: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnalyzeCallGraphArgs {
+    #[serde(default, alias = "objectUri")]
+    object_uri: Option<String>,
+    #[serde(default)]
+    direction: Option<String>,
+    #[serde(default, alias = "maxDepth")]
+    max_depth: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CompareCallGraphsArgs {
+    #[serde(default, alias = "objectUri")]
+    object_uri: Option<String>,
+    #[serde(default, alias = "traceData")]
+    trace_data: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

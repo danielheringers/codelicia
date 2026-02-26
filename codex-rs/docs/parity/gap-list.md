@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T10:27:09.8606809Z
+- generated_at_utc: 2026-02-26T10:29:39.9053787Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 57
-- neuro_mcp_functionally_missing: 66
+- neuro_mcp_functionally_implemented: 60
+- neuro_mcp_functionally_missing: 63
 
 ## Catalog Matched
 
@@ -140,7 +140,9 @@ _none_
 ## Functionally Implemented
 
 - Activate
+- AnalyzeCallGraph
 - CodeCompletion
+- CompareCallGraphs
 - CreateObject
 - CreatePackage
 - CreateTestInclude
@@ -172,6 +174,7 @@ _none_
 - GetProgram
 - GetSource
 - GetStructure
+- GetSystemInfo
 - GetTable
 - GetTableContents
 - GetTransaction
@@ -207,10 +210,8 @@ _none_
 - AMDPGetBreakpoints
 - AMDPGetVariables
 - AMDPSetBreakpoint
-- AnalyzeCallGraph
 - CallRFC
 - CloneObject
-- CompareCallGraphs
 - CompareSource
 - CreateAndActivateProgram
 - CreateClassWithTests
@@ -231,7 +232,6 @@ _none_
 - GetClassInfo
 - GetDump
 - GetSQLTraceState
-- GetSystemInfo
 - GetTextElements
 - GetTrace
 - GetTypeHierarchy
