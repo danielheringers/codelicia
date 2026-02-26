@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T10:24:56.8744037Z
+- generated_at_utc: 2026-02-26T10:27:09.8606809Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 50
-- neuro_mcp_functionally_missing: 73
+- neuro_mcp_functionally_implemented: 57
+- neuro_mcp_functionally_missing: 66
 
 ## Catalog Matched
 
@@ -144,7 +144,9 @@ _none_
 - CreateObject
 - CreatePackage
 - CreateTestInclude
+- CreateTransport
 - DeleteObject
+- DeleteTransport
 - FindDefinition
 - FindReferences
 - GetATCCustomizing
@@ -173,10 +175,15 @@ _none_
 - GetTable
 - GetTableContents
 - GetTransaction
+- GetTransport
+- GetTransportInfo
 - GetTypeInfo
+- GetUserTransports
+- ListTransports
 - LockObject
 - PrettyPrint
 - PublishServiceBinding
+- ReleaseTransport
 - RunATCCheck
 - RunUnitTests
 - SearchObject
@@ -208,7 +215,6 @@ _none_
 - CreateAndActivateProgram
 - CreateClassWithTests
 - CreateTable
-- CreateTransport
 - DebuggerAttach
 - DebuggerDetach
 - DebuggerGetStack
@@ -216,7 +222,6 @@ _none_
 - DebuggerListen
 - DebuggerStep
 - DeleteBreakpoint
-- DeleteTransport
 - DeployFromFile
 - EditSource
 - ExecuteABAP
@@ -229,10 +234,7 @@ _none_
 - GetSystemInfo
 - GetTextElements
 - GetTrace
-- GetTransport
-- GetTransportInfo
 - GetTypeHierarchy
-- GetUserTransports
 - GetVariants
 - GitExport
 - GitTypes
@@ -248,9 +250,7 @@ _none_
 - ListDumps
 - ListSQLTraces
 - ListTraces
-- ListTransports
 - MoveObject
-- ReleaseTransport
 - RenameObject
 - RunReport
 - RunReportAsync

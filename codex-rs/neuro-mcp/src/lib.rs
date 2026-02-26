@@ -203,6 +203,13 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "FindDefinition",
     "FindReferences",
     "CodeCompletion",
+    "GetUserTransports",
+    "GetTransportInfo",
+    "ListTransports",
+    "GetTransport",
+    "CreateTransport",
+    "ReleaseTransport",
+    "DeleteTransport",
     "CreateObject",
     "CreatePackage",
     "DeleteObject",
@@ -347,6 +354,13 @@ impl NeuroMcpFacade {
             "CodeCompletion" => self.handle_code_completion(arguments, tool_name).await,
             "RunUnitTests" => self.handle_run_unit_tests(arguments, tool_name).await,
             "RunATCCheck" => self.handle_run_atc_check(arguments, tool_name).await,
+            "GetUserTransports" => self.handle_get_user_transports(arguments, tool_name).await,
+            "GetTransportInfo" => self.handle_get_transport_info(arguments, tool_name).await,
+            "ListTransports" => self.handle_list_transports(arguments, tool_name).await,
+            "GetTransport" => self.handle_get_transport(arguments, tool_name).await,
+            "CreateTransport" => self.handle_create_transport(arguments, tool_name).await,
+            "ReleaseTransport" => self.handle_release_transport(arguments, tool_name).await,
+            "DeleteTransport" => self.handle_delete_transport(arguments, tool_name).await,
             "CreateObject" => self.handle_create_object(arguments, tool_name).await,
             "CreatePackage" => self.handle_create_package(arguments, tool_name).await,
             "DeleteObject" => self.handle_delete_object(arguments, tool_name).await,
@@ -1891,6 +1905,285 @@ impl NeuroMcpFacade {
         }))
     }
 
+    async fn handle_get_user_transports(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetUserTransportsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let user_name = args.user_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "user_name is required".to_owned(),
+        })?;
+        let user_name = user_name.trim().to_ascii_uppercase();
+        let endpoint = build_path_with_query(
+            "/sap/bc/adt/cts/transportrequests",
+            &[
+                ("user", user_name.clone()),
+                ("targets", "true".to_owned()),
+            ],
+        );
+        let raw = self
+            .engine
+            .get_raw_text(
+                endpoint.as_str(),
+                Some(
+                    "application/vnd.sap.adt.transportorganizertree.v1+xml, application/vnd.sap.adt.transportorganizer.v1+xml;q=0.9",
+                ),
+            )
+            .await?;
+        Ok(json!({
+            "user": user_name,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_transport_info(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetTransportInfoArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "objectUrl/object_url is required".to_owned(),
+        })?;
+        let dev_class = args.dev_class.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "devClass/dev_class is required".to_owned(),
+        })?;
+
+        let body = format!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<asx:abap xmlns:asx=\"http://www.sap.com/abapxml\" version=\"1.0\">\n  <asx:values>\n    <DATA>\n      <DEVCLASS>{}</DEVCLASS>\n      <OPERATION>I</OPERATION>\n      <URI>{}</URI>\n    </DATA>\n  </asx:values>\n</asx:abap>",
+            escape_xml(dev_class.as_str()),
+            escape_xml(object_url.as_str())
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                "/sap/bc/adt/cts/transportchecks",
+                Some(body.as_str()),
+                Some(
+                    "application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.transport.service.checkData",
+                ),
+                Some(
+                    "application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.transport.service.checkData",
+                ),
+            )
+            .await?;
+        Ok(json!({
+            "objectUrl": object_url,
+            "devClass": dev_class,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_list_transports(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ListTransportsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let user = args
+            .user
+            .or_else(|| std::env::var("NEURO_SAP_USER").ok())
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_uppercase();
+        let endpoint = if user.is_empty() {
+            "/sap/bc/adt/cts/transportrequests".to_owned()
+        } else {
+            build_path_with_query(
+                "/sap/bc/adt/cts/transportrequests",
+                &[("user", user.clone())],
+            )
+        };
+        let raw = self
+            .engine
+            .get_raw_text(
+                endpoint.as_str(),
+                Some("application/vnd.sap.adt.transportorganizertree.v1+xml"),
+            )
+            .await?;
+        Ok(json!({
+            "user": user,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_get_transport(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: TransportNumberArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let transport_number = args.transport.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "transport is required".to_owned(),
+        })?;
+        let endpoint = format!(
+            "/sap/bc/adt/cts/transportrequests/{}",
+            encode_path_segment(transport_number.trim().to_ascii_uppercase().as_str())
+        );
+        let raw = self
+            .engine
+            .get_raw_text(
+                endpoint.as_str(),
+                Some("application/vnd.sap.adt.transportorganizer.v1+xml"),
+            )
+            .await?;
+        Ok(json!({
+            "transport": transport_number,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_create_transport(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CreateTransportArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let description = args.description.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "description is required".to_owned(),
+        })?;
+        let package = args.package.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "package is required".to_owned(),
+        })?;
+        let req_type = if args
+            .request_type
+            .as_deref()
+            .unwrap_or_default()
+            .eq_ignore_ascii_case("customizing")
+        {
+            "W"
+        } else {
+            "K"
+        };
+
+        let mut query = Vec::new();
+        if let Some(layer) = args.transport_layer {
+            if !layer.trim().is_empty() {
+                query.push(("transportLayer", layer));
+            }
+        }
+        let endpoint = build_path_with_query("/sap/bc/adt/cts/transports", &query);
+        let body = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tm:root xmlns:tm=\"http://www.sap.com/cts/adt/tm\">\n  <tm:request tm:desc=\"{}\" tm:type=\"{}\" tm:target=\"\" tm:cts_project=\"\">\n    <tm:abap_object tm:pgmid=\"R3TR\" tm:type=\"DEVC\" tm:name=\"{}\"/>\n  </tm:request>\n</tm:root>",
+            escape_xml(description.as_str()),
+            req_type,
+            escape_xml(package.trim().to_ascii_uppercase().as_str())
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(body.as_str()),
+                Some("application/vnd.sap.as+xml"),
+                Some("text/plain"),
+            )
+            .await?;
+        Ok(json!({
+            "transport": raw.trim(),
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_release_transport(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ReleaseTransportArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let transport = args.transport.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "transport is required".to_owned(),
+        })?;
+        let action = if args.skip_atc.unwrap_or(false) {
+            "relObjigchkatc"
+        } else if args.ignore_locks.unwrap_or(false) {
+            "relwithignlock"
+        } else {
+            "newreleasejobs"
+        };
+        let endpoint = format!(
+            "/sap/bc/adt/cts/transportrequests/{}/{}",
+            encode_path_segment(transport.trim().to_ascii_uppercase().as_str()),
+            action
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                endpoint.as_str(),
+                None,
+                None,
+                Some("application/vnd.sap.adt.transportorganizer.v1+xml"),
+            )
+            .await?;
+        Ok(json!({
+            "transport": transport,
+            "action": action,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_delete_transport(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: TransportNumberArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let transport = args.transport.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "transport is required".to_owned(),
+        })?;
+        let endpoint = format!(
+            "/sap/bc/adt/cts/transportrequests/{}",
+            encode_path_segment(transport.trim().to_ascii_uppercase().as_str())
+        );
+        let raw = self
+            .engine
+            .delete_raw_text(
+                endpoint.as_str(),
+                Some("application/vnd.sap.adt.transportorganizer.v1+xml"),
+            )
+            .await?;
+        Ok(json!({
+            "transport": transport,
+            "raw": raw,
+        }))
+    }
+
     async fn handle_ws_request(
         &self,
         arguments: Value,
@@ -2053,6 +2346,54 @@ struct RunAtcCheckArgs {
     variant: Option<String>,
     #[serde(default, alias = "maxResults", alias = "max_results")]
     max_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetUserTransportsArgs {
+    #[serde(default, alias = "user", alias = "userName")]
+    user_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetTransportInfoArgs {
+    #[serde(default, alias = "objectUrl", alias = "object_url")]
+    object_url: Option<String>,
+    #[serde(default, alias = "devClass", alias = "dev_class")]
+    dev_class: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListTransportsArgs {
+    #[serde(default)]
+    user: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TransportNumberArgs {
+    #[serde(default)]
+    transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateTransportArgs {
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    package: Option<String>,
+    #[serde(default, alias = "transportLayer", alias = "transport_layer")]
+    transport_layer: Option<String>,
+    #[serde(default, alias = "type")]
+    request_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseTransportArgs {
+    #[serde(default)]
+    transport: Option<String>,
+    #[serde(default, alias = "ignoreLocks", alias = "ignore_locks")]
+    ignore_locks: Option<bool>,
+    #[serde(default, alias = "skipATC", alias = "skip_atc")]
+    skip_atc: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
