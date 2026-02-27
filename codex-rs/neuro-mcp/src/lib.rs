@@ -1,9 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use neuro_engine::{NeuroEngine, NeuroEngineError};
 use neuro_types::AdtUpdateSourceRequest;
+use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
@@ -161,59 +165,106 @@ const VBS_TOOL_NAMES: &[&str] = &[
     "UnpublishServiceBinding",
 ];
 
-const NEURO_INTERNAL_TOOL_NAMES: &[&str] = &["diagnose", "search", "get_source", "update_source", "ws_request"];
+const NEURO_INTERNAL_TOOL_NAMES: &[&str] = &[
+    "diagnose",
+    "search",
+    "get_source",
+    "update_source",
+    "ws_request",
+];
 const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "diagnose",
     "search",
-    "SearchObject",
     "get_source",
+    "update_source",
+    "ws_request",
     "GetSource",
     "GetProgram",
     "GetClass",
     "GetInterface",
     "GetFunction",
-    "GetInclude",
     "GetFunctionGroup",
-    "GetMessages",
-    "GetPackage",
+    "GetInclude",
     "GetTable",
     "GetTableContents",
     "GetStructure",
+    "GetPackage",
+    "GetMessages",
     "GetTransaction",
     "GetTypeInfo",
-    "GetCDSDependencies",
-    "GetClassInclude",
-    "UpdateClassInclude",
-    "CreateTestInclude",
-    "GetObjectStructure",
+    "GetClassInfo",
     "GetClassComponents",
-    "GetCallGraph",
-    "GetCallersOf",
-    "GetCalleesOf",
-    "AnalyzeCallGraph",
-    "CompareCallGraphs",
-    "GetInactiveObjects",
-    "GetSystemInfo",
-    "GetInstalledComponents",
-    "GetATCCustomizing",
-    "GetConnectionInfo",
-    "GetFeatures",
+    "GetClassInclude",
+    "GetCDSDependencies",
+    "WriteSource",
+    "WriteClass",
+    "WriteProgram",
+    "EditSource",
+    "UpdateSource",
+    "CreateObject",
+    "DeleteObject",
+    "CloneObject",
+    "RenameObject",
+    "MoveObject",
+    "LockObject",
+    "UnlockObject",
+    "SearchObject",
+    "GrepObjects",
+    "GrepPackages",
+    "GrepObject",
+    "GrepPackage",
+    "SyntaxCheck",
+    "Activate",
+    "ActivatePackage",
     "PrettyPrint",
     "GetPrettyPrinterSettings",
     "SetPrettyPrinterSettings",
     "RunUnitTests",
     "RunATCCheck",
+    "GetATCCustomizing",
+    "GetInactiveObjects",
+    "CreatePackage",
+    "CreateTable",
+    "CompareSource",
+    "CreateClassWithTests",
+    "CreateTestInclude",
+    "CreateAndActivateProgram",
+    "UpdateClassInclude",
     "FindDefinition",
     "FindReferences",
     "CodeCompletion",
-    "GetUserTransports",
-    "GetTransportInfo",
+    "GetTypeHierarchy",
+    "GetCallGraph",
+    "GetCallersOf",
+    "GetCalleesOf",
+    "GetObjectStructure",
+    "AnalyzeCallGraph",
+    "CompareCallGraphs",
+    "TraceExecution",
+    "GetSystemInfo",
+    "GetInstalledComponents",
+    "GetConnectionInfo",
+    "GetFeatures",
+    "ListDumps",
+    "GetDump",
+    "ListTraces",
+    "GetTrace",
+    "GetSQLTraceState",
+    "ListSQLTraces",
+    "ImportFromFile",
+    "ExportToFile",
+    "DeployFromFile",
+    "SaveToFile",
     "ListTransports",
     "GetTransport",
+    "GetTransportInfo",
+    "GetUserTransports",
     "CreateTransport",
     "ReleaseTransport",
     "DeleteTransport",
     "RunReport",
+    "RunReportAsync",
+    "GetAsyncResult",
     "GetVariants",
     "GetTextElements",
     "SetTextElements",
@@ -233,28 +284,23 @@ const IMPLEMENTED_TOOL_NAMES: &[&str] = &[
     "AMDPGetVariables",
     "AMDPSetBreakpoint",
     "AMDPGetBreakpoints",
+    "CallRFC",
+    "ExecuteABAP",
+    "GitTypes",
+    "GitExport",
+    "InstallZADTVSP",
+    "InstallAbapGit",
+    "ListDependencies",
+    "InstallDummyTest",
     "UI5ListApps",
     "UI5GetApp",
     "UI5GetFileContent",
-    "UI5UploadFile",
-    "UI5DeleteFile",
     "UI5CreateApp",
     "UI5DeleteApp",
-    "CreateObject",
-    "CreatePackage",
-    "DeleteObject",
+    "UI5DeleteFile",
+    "UI5UploadFile",
     "PublishServiceBinding",
     "UnpublishServiceBinding",
-    "LockObject",
-    "UnlockObject",
-    "Activate",
-    "SyntaxCheck",
-    "update_source",
-    "UpdateSource",
-    "WriteSource",
-    "WriteProgram",
-    "WriteClass",
-    "ws_request",
 ];
 
 impl NeuroMcpFacade {
@@ -293,70 +339,78 @@ impl NeuroMcpFacade {
             "diagnose" => self.handle_diagnose().await,
             "search" | "SearchObject" => self.handle_search(arguments, tool_name).await,
             "get_source" | "GetSource" => self.handle_get_source(arguments, tool_name).await,
-            "GetProgram" => self
-                .handle_get_source_by_pattern(
+            "GetProgram" => {
+                self.handle_get_source_by_pattern(
                     arguments,
                     tool_name,
                     "/sap/bc/adt/programs/programs/{name}/source/main",
                     &["programName", "program_name", "name"],
                 )
-                .await,
-            "GetClass" => self
-                .handle_get_source_by_pattern(
+                .await
+            }
+            "GetClass" => {
+                self.handle_get_source_by_pattern(
                     arguments,
                     tool_name,
                     "/sap/bc/adt/oo/classes/{name}/source/main",
                     &["className", "class_name", "name"],
                 )
-                .await,
-            "GetInterface" => self
-                .handle_get_source_by_pattern(
+                .await
+            }
+            "GetInterface" => {
+                self.handle_get_source_by_pattern(
                     arguments,
                     tool_name,
                     "/sap/bc/adt/oo/interfaces/{name}/source/main",
                     &["interfaceName", "interface_name", "name"],
                 )
-                .await,
-            "GetInclude" => self
-                .handle_get_source_by_pattern(
+                .await
+            }
+            "GetInclude" => {
+                self.handle_get_source_by_pattern(
                     arguments,
                     tool_name,
                     "/sap/bc/adt/programs/includes/{name}/source/main",
                     &["includeName", "include_name", "name"],
                 )
-                .await,
+                .await
+            }
             "GetFunction" => self.handle_get_function(arguments, tool_name).await,
-            "GetFunctionGroup" => self
-                .handle_get_raw_by_pattern(
+            "GetFunctionGroup" => {
+                self.handle_get_raw_by_pattern(
                     arguments,
                     tool_name,
                     "/sap/bc/adt/functions/groups/{name}",
                     &["groupName", "group_name", "name"],
                     Some("application/xml"),
                 )
-                .await,
+                .await
+            }
             "GetMessages" => self.handle_get_messages(arguments, tool_name).await,
             "GetPackage" => self.handle_get_package(arguments, tool_name).await,
-            "GetTable" => self
-                .handle_get_source_by_pattern(
+            "GetTable" => {
+                self.handle_get_source_by_pattern(
                     arguments,
                     tool_name,
                     "/sap/bc/adt/ddic/tables/{name}/source/main",
                     &["tableName", "table_name", "name"],
                 )
-                .await,
+                .await
+            }
             "GetTableContents" => self.handle_get_table_contents(arguments, tool_name).await,
-            "GetStructure" => self
-                .handle_get_source_by_pattern(
+            "GetStructure" => {
+                self.handle_get_source_by_pattern(
                     arguments,
                     tool_name,
                     "/sap/bc/adt/ddic/structures/{name}/source/main",
                     &["structureName", "structure_name", "name"],
                 )
-                .await,
+                .await
+            }
             "GetTransaction" => self.handle_get_transaction(arguments, tool_name).await,
             "GetTypeInfo" => self.handle_get_type_info(arguments, tool_name).await,
             "GetCDSDependencies" => self.handle_get_cds_dependencies(arguments, tool_name).await,
+            "GetClassInfo" => self.handle_get_class_info(arguments, tool_name).await,
             "GetClassInclude" => self.handle_get_class_include(arguments, tool_name).await,
             "UpdateClassInclude" => self.handle_update_class_include(arguments, tool_name).await,
             "CreateTestInclude" => self.handle_create_test_include(arguments, tool_name).await,
@@ -367,9 +421,11 @@ impl NeuroMcpFacade {
             "GetCalleesOf" => self.handle_get_callees_of(arguments, tool_name).await,
             "AnalyzeCallGraph" => self.handle_analyze_call_graph(arguments, tool_name).await,
             "CompareCallGraphs" => self.handle_compare_call_graphs(arguments, tool_name).await,
+            "TraceExecution" => self.handle_trace_execution(arguments, tool_name).await,
             "GetInactiveObjects" => self.handle_get_inactive_objects(arguments, tool_name).await,
             "GetInstalledComponents" => {
-                self.handle_get_installed_components(arguments, tool_name).await
+                self.handle_get_installed_components(arguments, tool_name)
+                    .await
             }
             "GetATCCustomizing" => self.handle_get_atc_customizing(arguments, tool_name).await,
             "GetSystemInfo" => self.handle_get_system_info(arguments, tool_name).await,
@@ -377,16 +433,23 @@ impl NeuroMcpFacade {
             "GetFeatures" => self.handle_get_features(arguments, tool_name).await,
             "PrettyPrint" => self.handle_pretty_print(arguments, tool_name).await,
             "GetPrettyPrinterSettings" => {
-                self.handle_get_pretty_printer_settings(arguments, tool_name).await
+                self.handle_get_pretty_printer_settings(arguments, tool_name)
+                    .await
             }
             "SetPrettyPrinterSettings" => {
-                self.handle_set_pretty_printer_settings(arguments, tool_name).await
+                self.handle_set_pretty_printer_settings(arguments, tool_name)
+                    .await
             }
             "FindDefinition" => self.handle_find_definition(arguments, tool_name).await,
             "FindReferences" => self.handle_find_references(arguments, tool_name).await,
             "CodeCompletion" => self.handle_code_completion(arguments, tool_name).await,
+            "GrepObject" => self.handle_grep_object(arguments, tool_name).await,
+            "GrepObjects" => self.handle_grep_objects(arguments, tool_name).await,
+            "GrepPackage" => self.handle_grep_package(arguments, tool_name).await,
+            "GrepPackages" => self.handle_grep_packages(arguments, tool_name).await,
             "RunUnitTests" => self.handle_run_unit_tests(arguments, tool_name).await,
             "RunATCCheck" => self.handle_run_atc_check(arguments, tool_name).await,
+            "ActivatePackage" => self.handle_activate_package(arguments, tool_name).await,
             "GetUserTransports" => self.handle_get_user_transports(arguments, tool_name).await,
             "GetTransportInfo" => self.handle_get_transport_info(arguments, tool_name).await,
             "ListTransports" => self.handle_list_transports(arguments, tool_name).await,
@@ -394,7 +457,15 @@ impl NeuroMcpFacade {
             "CreateTransport" => self.handle_create_transport(arguments, tool_name).await,
             "ReleaseTransport" => self.handle_release_transport(arguments, tool_name).await,
             "DeleteTransport" => self.handle_delete_transport(arguments, tool_name).await,
+            "ListDumps" => self.handle_list_dumps(arguments, tool_name).await,
+            "GetDump" => self.handle_get_dump(arguments, tool_name).await,
+            "ListTraces" => self.handle_list_traces(arguments, tool_name).await,
+            "GetTrace" => self.handle_get_trace(arguments, tool_name).await,
+            "GetSQLTraceState" => self.handle_get_sql_trace_state(arguments, tool_name).await,
+            "ListSQLTraces" => self.handle_list_sql_traces(arguments, tool_name).await,
             "RunReport" => self.handle_run_report(arguments, tool_name).await,
+            "RunReportAsync" => self.handle_run_report_async(arguments, tool_name).await,
+            "GetAsyncResult" => self.handle_get_async_result(arguments, tool_name).await,
             "GetVariants" => self.handle_get_variants(arguments, tool_name).await,
             "GetTextElements" => self.handle_get_text_elements(arguments, tool_name).await,
             "SetTextElements" => self.handle_set_text_elements(arguments, tool_name).await,
@@ -407,7 +478,8 @@ impl NeuroMcpFacade {
             "DebuggerStep" => self.handle_debugger_step(arguments, tool_name).await,
             "DebuggerGetStack" => self.handle_debugger_get_stack(arguments, tool_name).await,
             "DebuggerGetVariables" => {
-                self.handle_debugger_get_variables(arguments, tool_name).await
+                self.handle_debugger_get_variables(arguments, tool_name)
+                    .await
             }
             "AMDPDebuggerStart" => self.handle_amdp_start(arguments, tool_name).await,
             "AMDPDebuggerResume" => self.handle_amdp_resume(arguments, tool_name).await,
@@ -423,9 +495,36 @@ impl NeuroMcpFacade {
             "UI5DeleteFile" => self.handle_ui5_delete_file(arguments, tool_name).await,
             "UI5CreateApp" => self.handle_ui5_create_app(arguments, tool_name).await,
             "UI5DeleteApp" => self.handle_ui5_delete_app(arguments, tool_name).await,
+            "CallRFC" => self.handle_call_rfc(arguments, tool_name).await,
+            "ExecuteABAP" => self.handle_execute_abap(arguments, tool_name).await,
+            "MoveObject" => self.handle_move_object(arguments, tool_name).await,
+            "GetTypeHierarchy" => self.handle_get_type_hierarchy(arguments, tool_name).await,
+            "GitTypes" => self.handle_git_types(arguments, tool_name).await,
+            "GitExport" => self.handle_git_export(arguments, tool_name).await,
+            "InstallZADTVSP" => self.handle_install_zadtvsp(arguments, tool_name).await,
+            "InstallAbapGit" => self.handle_install_abap_git(arguments, tool_name).await,
+            "ListDependencies" => self.handle_list_dependencies(arguments, tool_name).await,
+            "InstallDummyTest" => self.handle_install_dummy_test(arguments, tool_name).await,
             "CreateObject" => self.handle_create_object(arguments, tool_name).await,
             "CreatePackage" => self.handle_create_package(arguments, tool_name).await,
+            "CreateTable" => self.handle_create_table(arguments, tool_name).await,
+            "CreateAndActivateProgram" => {
+                self.handle_create_and_activate_program(arguments, tool_name)
+                    .await
+            }
+            "CreateClassWithTests" => {
+                self.handle_create_class_with_tests(arguments, tool_name)
+                    .await
+            }
             "DeleteObject" => self.handle_delete_object(arguments, tool_name).await,
+            "CloneObject" => self.handle_clone_object(arguments, tool_name).await,
+            "RenameObject" => self.handle_rename_object(arguments, tool_name).await,
+            "CompareSource" => self.handle_compare_source(arguments, tool_name).await,
+            "EditSource" => self.handle_edit_source(arguments, tool_name).await,
+            "SaveToFile" | "ExportToFile" => self.handle_save_to_file(arguments, tool_name).await,
+            "DeployFromFile" | "ImportFromFile" => {
+                self.handle_deploy_from_file(arguments, tool_name).await
+            }
             "PublishServiceBinding" => {
                 self.handle_publish_service_binding(arguments, tool_name, true)
                     .await
@@ -441,22 +540,24 @@ impl NeuroMcpFacade {
             "update_source" | "UpdateSource" | "WriteSource" => {
                 self.handle_update_source(arguments, tool_name).await
             }
-            "WriteProgram" => self
-                .handle_update_source_by_pattern(
+            "WriteProgram" => {
+                self.handle_update_source_by_pattern(
                     arguments,
                     tool_name,
                     "/sap/bc/adt/programs/programs/{name}/source/main",
                     &["programName", "program_name", "name"],
                 )
-                .await,
-            "WriteClass" => self
-                .handle_update_source_by_pattern(
+                .await
+            }
+            "WriteClass" => {
+                self.handle_update_source_by_pattern(
                     arguments,
                     tool_name,
                     "/sap/bc/adt/oo/classes/{name}/source/main",
                     &["className", "class_name", "name"],
                 )
-                .await,
+                .await
+            }
             "ws_request" => self.handle_ws_request(arguments, tool_name).await,
             _ => {
                 if self.registry.contains_key(tool_name) && !is_implemented_tool(tool_name) {
@@ -475,15 +576,21 @@ impl NeuroMcpFacade {
         serde_json::to_value(report).map_err(Into::into)
     }
 
-    async fn handle_search(&self, arguments: Value, tool_name: &str) -> Result<Value, NeuroMcpError> {
-        let args: SearchArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+    async fn handle_search(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: SearchArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
 
-        let objects = self.engine.search(args.query.as_str(), args.max_results).await?;
+        let objects = self
+            .engine
+            .search(args.query.as_str(), args.max_results)
+            .await?;
         Ok(json!({ "objects": objects }))
     }
 
@@ -492,12 +599,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: GetSourceArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: GetSourceArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
 
         let response = self.engine.get_source(args.object_uri.as_str()).await?;
         serde_json::to_value(response).map_err(Into::into)
@@ -510,12 +616,11 @@ impl NeuroMcpFacade {
         path_pattern: &str,
         accepted_name_keys: &[&str],
     ) -> Result<Value, NeuroMcpError> {
-        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: NamedObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
 
         let name = args.extract_name(accepted_name_keys).ok_or_else(|| {
             NeuroMcpError::InvalidArguments {
@@ -533,12 +638,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: UpdateSourceArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: UpdateSourceArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
 
         let response = self
             .engine
@@ -558,12 +662,11 @@ impl NeuroMcpFacade {
         path_pattern: &str,
         accepted_name_keys: &[&str],
     ) -> Result<Value, NeuroMcpError> {
-        let args: NamedSourceArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: NamedSourceArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
 
         let name = args.extract_name(accepted_name_keys).ok_or_else(|| {
             NeuroMcpError::InvalidArguments {
@@ -589,21 +692,24 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: FunctionSourceArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: FunctionSourceArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
 
-        let function_name = args.function_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "function name is required".to_owned(),
-        })?;
-        let group_name = args.group_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "group name is required".to_owned(),
-        })?;
+        let function_name = args
+            .function_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "function name is required".to_owned(),
+            })?;
+        let group_name = args
+            .group_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "group name is required".to_owned(),
+            })?;
 
         let object_uri = format!(
             "/sap/bc/adt/functions/groups/{}/fmodules/{}/source/main",
@@ -623,12 +729,11 @@ impl NeuroMcpFacade {
         accepted_name_keys: &[&str],
         accept: Option<&str>,
     ) -> Result<Value, NeuroMcpError> {
-        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: NamedObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
 
         let name = args.extract_name(accepted_name_keys).ok_or_else(|| {
             NeuroMcpError::InvalidArguments {
@@ -638,7 +743,10 @@ impl NeuroMcpFacade {
         })?;
 
         let object_uri = build_source_uri(path_pattern, name.as_str());
-        let raw = self.engine.get_raw_text(object_uri.as_str(), accept).await?;
+        let raw = self
+            .engine
+            .get_raw_text(object_uri.as_str(), accept)
+            .await?;
         Ok(json!({
             "objectUri": object_uri,
             "raw": raw,
@@ -650,12 +758,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: NamedObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let name = args
             .extract_name(&["messageClass", "message_class", "name"])
             .ok_or_else(|| NeuroMcpError::InvalidArguments {
@@ -669,7 +776,10 @@ impl NeuroMcpFacade {
         );
         let raw = self
             .engine
-            .get_raw_text(object_uri.as_str(), Some("application/vnd.sap.adt.mc.messageclass+xml"))
+            .get_raw_text(
+                object_uri.as_str(),
+                Some("application/vnd.sap.adt.mc.messageclass+xml"),
+            )
             .await?;
         Ok(json!({
             "objectUri": object_uri,
@@ -682,12 +792,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: NamedObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let package_name = args
             .extract_name(&["packageName", "package_name", "name"])
             .ok_or_else(|| NeuroMcpError::InvalidArguments {
@@ -704,7 +813,10 @@ impl NeuroMcpFacade {
                 ("withShortDescriptions", "true".to_owned()),
             ],
         );
-        let raw = self.engine.post_raw_text(path.as_str(), None, None, None).await?;
+        let raw = self
+            .engine
+            .post_raw_text(path.as_str(), None, None, None)
+            .await?;
         Ok(json!({
             "package": package_name,
             "raw": raw,
@@ -716,12 +828,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: NamedObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let tcode = args
             .extract_name(&["tcode", "transaction", "name"])
             .ok_or_else(|| NeuroMcpError::InvalidArguments {
@@ -749,12 +860,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: NamedObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let type_name = args
             .extract_name(&["typeName", "type_name", "name"])
             .ok_or_else(|| NeuroMcpError::InvalidArguments {
@@ -782,12 +892,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: NamedObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: NamedObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let ddls = args
             .extract_name(&["ddlsName", "ddls_name", "name"])
             .ok_or_else(|| NeuroMcpError::InvalidArguments {
@@ -801,7 +910,10 @@ impl NeuroMcpFacade {
         );
         let raw = self
             .engine
-            .get_raw_text(path.as_str(), Some("application/vnd.sap.adt.codegen.data.v1+xml"))
+            .get_raw_text(
+                path.as_str(),
+                Some("application/vnd.sap.adt.codegen.data.v1+xml"),
+            )
             .await?;
         Ok(json!({ "raw": raw }))
     }
@@ -811,16 +923,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: TableContentsArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: TableContentsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let table_name = args.table_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "tableName/table_name is required".to_owned(),
-        })?;
+            })?;
+        let table_name = args
+            .table_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "tableName/table_name is required".to_owned(),
+            })?;
 
         let table_name = table_name.to_ascii_uppercase();
         let max_rows = args.max_rows.unwrap_or(100).max(1);
@@ -865,12 +978,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: CreateObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: CreateObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         self.create_object_request(&args, tool_name).await
     }
 
@@ -879,27 +991,28 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: CreatePackageArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: CreatePackageArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let name = args.name.ok_or_else(|| NeuroMcpError::InvalidArguments {
             tool: tool_name.to_owned(),
             message: "name is required".to_owned(),
         })?;
-        let description = args.description.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "description is required".to_owned(),
-        })?;
+        let description = args
+            .description
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "description is required".to_owned(),
+            })?;
         let package_name = args.parent.unwrap_or_default();
         let transport = args.transport.unwrap_or_default();
         if !name.trim_start().starts_with('$') && transport.trim().is_empty() {
             return Err(NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
-                message:
-                    "transport is required for transportable packages (non-$ packages)".to_owned(),
+                message: "transport is required for transportable packages (non-$ packages)"
+                    .to_owned(),
             });
         }
 
@@ -929,20 +1042,23 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: DeleteObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: DeleteObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUrl/object_url is required".to_owned(),
-        })?;
-        let lock_handle = args.lock_handle.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "lockHandle/lock_handle is required".to_owned(),
-        })?;
+            })?;
+        let object_url = args
+            .object_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUrl/object_url is required".to_owned(),
+            })?;
+        let lock_handle = args
+            .lock_handle
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "lockHandle/lock_handle is required".to_owned(),
+            })?;
         let mut query = vec![("lockHandle", lock_handle.clone())];
         if let Some(transport) = args.transport {
             if !transport.trim().is_empty() {
@@ -964,18 +1080,23 @@ impl NeuroMcpFacade {
         tool_name: &str,
         publish: bool,
     ) -> Result<Value, NeuroMcpError> {
-        let args: ServiceBindingArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: ServiceBindingArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let service_name = args.service_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "serviceName/service_name is required".to_owned(),
-        })?;
+            })?;
+        let service_name = args
+            .service_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "serviceName/service_name is required".to_owned(),
+            })?;
         let service_version = args.service_version.unwrap_or_else(|| "0001".to_owned());
-        let action = if publish { "publishjobs" } else { "unpublishjobs" };
+        let action = if publish {
+            "publishjobs"
+        } else {
+            "unpublishjobs"
+        };
         let endpoint = build_path_with_query(
             format!("/sap/bc/adt/businessservices/odatav2/{action}").as_str(),
             &[
@@ -1009,24 +1130,33 @@ impl NeuroMcpFacade {
         args: &CreateObjectArgs,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let object_type = args.object_type.as_deref().ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectType/object_type is required".to_owned(),
-        })?
-        .trim()
-        .to_ascii_uppercase();
-        let name = args.name.as_deref().ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "name is required".to_owned(),
-        })?
-        .trim()
-        .to_ascii_uppercase();
-        let description = args.description.as_deref().ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "description is required".to_owned(),
-        })?
-        .trim()
-        .to_owned();
+        let object_type = args
+            .object_type
+            .as_deref()
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectType/object_type is required".to_owned(),
+            })?
+            .trim()
+            .to_ascii_uppercase();
+        let name = args
+            .name
+            .as_deref()
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "name is required".to_owned(),
+            })?
+            .trim()
+            .to_ascii_uppercase();
+        let description = args
+            .description
+            .as_deref()
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "description is required".to_owned(),
+            })?
+            .trim()
+            .to_owned();
         let package_name = args
             .package_name
             .as_deref()
@@ -1057,7 +1187,9 @@ impl NeuroMcpFacade {
         )
         .ok_or_else(|| NeuroMcpError::InvalidArguments {
             tool: tool_name.to_owned(),
-            message: format!("unsupported object_type `{object_type}` or missing required parent_name"),
+            message: format!(
+                "unsupported object_type `{object_type}` or missing required parent_name"
+            ),
         })?;
 
         let responsible = args
@@ -1118,16 +1250,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: LockObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: LockObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUrl/object_url is required".to_owned(),
-        })?;
+            })?;
+        let object_url = args
+            .object_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUrl/object_url is required".to_owned(),
+            })?;
         let access_mode = args.access_mode.unwrap_or_else(|| "MODIFY".to_owned());
         let path = build_path_with_query(
             object_url.as_str(),
@@ -1158,20 +1291,23 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: UnlockObjectArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: UnlockObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUrl/object_url is required".to_owned(),
-        })?;
-        let lock_handle = args.lock_handle.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "lockHandle/lock_handle is required".to_owned(),
-        })?;
+            })?;
+        let object_url = args
+            .object_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUrl/object_url is required".to_owned(),
+            })?;
+        let lock_handle = args
+            .lock_handle
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "lockHandle/lock_handle is required".to_owned(),
+            })?;
 
         let path = build_path_with_query(
             object_url.as_str(),
@@ -1181,7 +1317,10 @@ impl NeuroMcpFacade {
             ],
         );
 
-        let raw = self.engine.post_raw_text(path.as_str(), None, None, None).await?;
+        let raw = self
+            .engine
+            .post_raw_text(path.as_str(), None, None, None)
+            .await?;
         Ok(json!({
             "objectUrl": object_url,
             "lockHandle": lock_handle,
@@ -1194,25 +1333,27 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: ActivateArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: ActivateArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUrl/object_url is required".to_owned(),
-        })?;
-        let object_name = args.object_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectName/object_name is required".to_owned(),
-        })?;
+            })?;
+        let object_url = args
+            .object_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUrl/object_url is required".to_owned(),
+            })?;
+        let object_name = args
+            .object_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectName/object_name is required".to_owned(),
+            })?;
 
         let body = format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<adtcore:objectReferences xmlns:adtcore=\"http://www.sap.com/adt/core\">\n  <adtcore:objectReference adtcore:uri=\"{}\" adtcore:name=\"{}\"/>\n</adtcore:objectReferences>",
-            object_url,
-            object_name
+            object_url, object_name
         );
         let raw = self
             .engine
@@ -1235,20 +1376,23 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: SyntaxCheckArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: SyntaxCheckArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUrl/object_url is required".to_owned(),
-        })?;
-        let source_content = args.content.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "content is required".to_owned(),
-        })?;
+            })?;
+        let object_url = args
+            .object_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUrl/object_url is required".to_owned(),
+            })?;
+        let source_content = args
+            .content
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "content is required".to_owned(),
+            })?;
 
         let source_url = if object_url.contains("/includes/") {
             object_url.clone()
@@ -1258,9 +1402,7 @@ impl NeuroMcpFacade {
         let encoded = base64::engine::general_purpose::STANDARD.encode(source_content.as_bytes());
         let body = format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<chkrun:checkObjectList xmlns:chkrun=\"http://www.sap.com/adt/checkrun\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n  <chkrun:checkObject adtcore:uri=\"{}\" chkrun:version=\"active\">\n    <chkrun:artifacts>\n      <chkrun:artifact chkrun:contentType=\"text/plain; charset=utf-8\" chkrun:uri=\"{}\">\n        <chkrun:content>{}</chkrun:content>\n      </chkrun:artifact>\n    </chkrun:artifacts>\n  </chkrun:checkObject>\n</chkrun:checkObjectList>",
-            source_url,
-            source_url,
-            encoded
+            source_url, source_url, encoded
         );
         let raw = self
             .engine
@@ -1283,20 +1425,23 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: ClassIncludeArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: ClassIncludeArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let class_name = args.class_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "className/class_name is required".to_owned(),
-        })?;
-        let include_type = args.include_type.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "includeType/include_type is required".to_owned(),
-        })?;
+            })?;
+        let class_name = args
+            .class_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "className/class_name is required".to_owned(),
+            })?;
+        let include_type = args
+            .include_type
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "includeType/include_type is required".to_owned(),
+            })?;
         let object_uri = build_class_include_uri(class_name.as_str(), include_type.as_str());
         let response = self.engine.get_source(object_uri.as_str()).await?;
         serde_json::to_value(response).map_err(Into::into)
@@ -1307,24 +1452,29 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: UpdateClassIncludeArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: UpdateClassIncludeArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let class_name = args.class_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "className/class_name is required".to_owned(),
-        })?;
-        let include_type = args.include_type.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "includeType/include_type is required".to_owned(),
-        })?;
-        let lock_handle = args.lock_handle.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "lockHandle/lock_handle is required".to_owned(),
-        })?;
+            })?;
+        let class_name = args
+            .class_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "className/class_name is required".to_owned(),
+            })?;
+        let include_type = args
+            .include_type
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "includeType/include_type is required".to_owned(),
+            })?;
+        let lock_handle = args
+            .lock_handle
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "lockHandle/lock_handle is required".to_owned(),
+            })?;
 
         let base_uri = build_class_include_uri(class_name.as_str(), include_type.as_str());
         let mut query = vec![("lockHandle", lock_handle)];
@@ -1386,14 +1536,18 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let class_name = args.class_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "className/class_name is required".to_owned(),
-        })?;
-        let lock_handle = args.lock_handle.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "lockHandle/lock_handle is required".to_owned(),
-        })?;
+        let class_name = args
+            .class_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "className/class_name is required".to_owned(),
+            })?;
+        let lock_handle = args
+            .lock_handle
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "lockHandle/lock_handle is required".to_owned(),
+            })?;
 
         let encoded_class_name = encode_path_segment(class_name.to_ascii_uppercase().as_str());
         let includes_path = format!("/sap/bc/adt/oo/classes/{encoded_class_name}/includes");
@@ -1407,12 +1561,7 @@ impl NeuroMcpFacade {
         let body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<class:abapClassInclude xmlns:class=\"http://www.sap.com/adt/oo/classes\"\n  xmlns:adtcore=\"http://www.sap.com/adt/core\"\n  adtcore:name=\"dummy\" class:includeType=\"testclasses\"/>";
         let raw = self
             .engine
-            .post_raw_text(
-                endpoint.as_str(),
-                Some(body),
-                Some("application/*"),
-                None,
-            )
+            .post_raw_text(endpoint.as_str(), Some(body), Some("application/*"), None)
             .await?;
         Ok(json!({
             "className": class_name,
@@ -1431,10 +1580,12 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let object_name = args.object_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectName/object_name is required".to_owned(),
-        })?;
+        let object_name = args
+            .object_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectName/object_name is required".to_owned(),
+            })?;
         let max_results = args.max_results.unwrap_or(100).max(1);
         let endpoint = build_path_with_query(
             "/sap/bc/adt/cai/objectexplorer/objects",
@@ -1491,16 +1642,23 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let object_uri = args.object_uri.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUri/object_uri is required".to_owned(),
-        })?;
+        let object_uri = args
+            .object_uri
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUri/object_uri is required".to_owned(),
+            })?;
         let direction = args.direction.unwrap_or_else(|| "callers".to_owned());
         let max_depth = args.max_depth.unwrap_or(3).max(1);
         let max_results = args.max_results.unwrap_or(100).max(1);
 
         let raw = self
-            .request_call_graph(object_uri.as_str(), direction.as_str(), max_depth, max_results)
+            .request_call_graph(
+                object_uri.as_str(),
+                direction.as_str(),
+                max_depth,
+                max_results,
+            )
             .await?;
         Ok(json!({
             "objectUri": object_uri,
@@ -1521,10 +1679,12 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let object_uri = args.object_uri.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUri/object_uri is required".to_owned(),
-        })?;
+        let object_uri = args
+            .object_uri
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUri/object_uri is required".to_owned(),
+            })?;
         let max_depth = args.max_depth.unwrap_or(5).max(1);
         let raw = self
             .request_call_graph(object_uri.as_str(), "callers", max_depth, 500)
@@ -1548,10 +1708,12 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let object_uri = args.object_uri.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUri/object_uri is required".to_owned(),
-        })?;
+        let object_uri = args
+            .object_uri
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUri/object_uri is required".to_owned(),
+            })?;
         let max_depth = args.max_depth.unwrap_or(5).max(1);
         let raw = self
             .request_call_graph(object_uri.as_str(), "callees", max_depth, 500)
@@ -1575,16 +1737,23 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let object_uri = args.object_uri.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUri/object_uri is required".to_owned(),
-        })?;
+        let object_uri = args
+            .object_uri
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUri/object_uri is required".to_owned(),
+            })?;
         let direction = args.direction.unwrap_or_else(|| "callees".to_owned());
         let max_depth = args.max_depth.unwrap_or(5).max(1);
         let max_results = 1000;
 
         let raw = self
-            .request_call_graph(object_uri.as_str(), direction.as_str(), max_depth, max_results)
+            .request_call_graph(
+                object_uri.as_str(),
+                direction.as_str(),
+                max_depth,
+                max_results,
+            )
             .await?;
         Ok(json!({
             "objectUri": object_uri,
@@ -1605,19 +1774,24 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let object_uri = args.object_uri.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUri/object_uri is required".to_owned(),
-        })?;
-        let trace_data = args.trace_data.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "trace_data is required".to_owned(),
-        })?;
-        let actual_edges: Value =
-            serde_json::from_str(trace_data.as_str()).map_err(|error| NeuroMcpError::InvalidArguments {
+        let object_uri = args
+            .object_uri
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUri/object_uri is required".to_owned(),
+            })?;
+        let trace_data = args
+            .trace_data
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "trace_data is required".to_owned(),
+            })?;
+        let actual_edges: Value = serde_json::from_str(trace_data.as_str()).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: format!("trace_data must be valid JSON: {error}"),
-            })?;
+            }
+        })?;
         let actual_edges_count = actual_edges
             .as_array()
             .map(|items| items.len())
@@ -1722,7 +1896,11 @@ impl NeuroMcpFacade {
         }))
     }
 
-    async fn run_freestyle_query(&self, query: &str, max_rows: u32) -> Result<String, NeuroMcpError> {
+    async fn run_freestyle_query(
+        &self,
+        query: &str,
+        max_rows: u32,
+    ) -> Result<String, NeuroMcpError> {
         let endpoint = build_path_with_query(
             "/sap/bc/adt/datapreview/freestyle",
             &[("rowNumber", max_rows.max(1).to_string())],
@@ -1781,12 +1959,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: PrettyPrintArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: PrettyPrintArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let raw = self
             .engine
             .post_raw_text(
@@ -1844,12 +2021,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: FindDefinitionArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: FindDefinitionArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let line = args.line.max(1);
         let start_col = args.start_col.max(1);
         let end_col = args.end_col.max(start_col);
@@ -1890,12 +2066,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: FindReferencesArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: FindReferencesArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let mut uri = args.object_url;
         if let (Some(line), Some(column)) = (args.line, args.column) {
             if line > 0 && column > 0 {
@@ -1924,12 +2099,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: CodeCompletionArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: CodeCompletionArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let line = args.line.max(1);
         let column = args.column.max(1);
         let uri = format!("{}#start={},{}", args.source_url, line, column);
@@ -1954,16 +2128,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: RunUnitTestsArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: RunUnitTestsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUrl/object_url is required".to_owned(),
-        })?;
+            })?;
+        let object_url = args
+            .object_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUrl/object_url is required".to_owned(),
+            })?;
         let include_dangerous = args.include_dangerous.unwrap_or(false);
         let include_long = args.include_long.unwrap_or(false);
 
@@ -1997,16 +2172,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: RunAtcCheckArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: RunAtcCheckArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUrl/object_url is required".to_owned(),
-        })?;
+            })?;
+        let object_url = args
+            .object_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUrl/object_url is required".to_owned(),
+            })?;
         let max_results = args.max_results.unwrap_or(100).max(1);
         let variant = if let Some(value) = args.variant {
             let trimmed = value.trim().to_owned();
@@ -2083,7 +2259,10 @@ impl NeuroMcpFacade {
         );
         let findings_raw = self
             .engine
-            .get_raw_text(findings_endpoint.as_str(), Some("application/atc.worklist.v1+xml"))
+            .get_raw_text(
+                findings_endpoint.as_str(),
+                Some("application/atc.worklist.v1+xml"),
+            )
             .await?;
 
         Ok(json!({
@@ -2105,17 +2284,16 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let user_name = args.user_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "user_name is required".to_owned(),
-        })?;
+        let user_name = args
+            .user_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "user_name is required".to_owned(),
+            })?;
         let user_name = user_name.trim().to_ascii_uppercase();
         let endpoint = build_path_with_query(
             "/sap/bc/adt/cts/transportrequests",
-            &[
-                ("user", user_name.clone()),
-                ("targets", "true".to_owned()),
-            ],
+            &[("user", user_name.clone()), ("targets", "true".to_owned())],
         );
         let raw = self
             .engine
@@ -2142,14 +2320,18 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let object_url = args.object_url.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "objectUrl/object_url is required".to_owned(),
-        })?;
-        let dev_class = args.dev_class.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "devClass/dev_class is required".to_owned(),
-        })?;
+        let object_url = args
+            .object_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objectUrl/object_url is required".to_owned(),
+            })?;
+        let dev_class = args
+            .dev_class
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "devClass/dev_class is required".to_owned(),
+            })?;
 
         let body = format!(
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<asx:abap xmlns:asx=\"http://www.sap.com/abapxml\" version=\"1.0\">\n  <asx:values>\n    <DATA>\n      <DEVCLASS>{}</DEVCLASS>\n      <OPERATION>I</OPERATION>\n      <URI>{}</URI>\n    </DATA>\n  </asx:values>\n</asx:abap>",
@@ -2223,10 +2405,12 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let transport_number = args.transport.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "transport is required".to_owned(),
-        })?;
+        let transport_number = args
+            .transport
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "transport is required".to_owned(),
+            })?;
         let endpoint = format!(
             "/sap/bc/adt/cts/transportrequests/{}",
             encode_path_segment(transport_number.trim().to_ascii_uppercase().as_str())
@@ -2254,14 +2438,18 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let description = args.description.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "description is required".to_owned(),
-        })?;
-        let package = args.package.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "package is required".to_owned(),
-        })?;
+        let description = args
+            .description
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "description is required".to_owned(),
+            })?;
+        let package = args
+            .package
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "package is required".to_owned(),
+            })?;
         let req_type = if args
             .request_type
             .as_deref()
@@ -2311,10 +2499,12 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let transport = args.transport.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "transport is required".to_owned(),
-        })?;
+        let transport = args
+            .transport
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "transport is required".to_owned(),
+            })?;
         let action = if args.skip_atc.unwrap_or(false) {
             "relObjigchkatc"
         } else if args.ignore_locks.unwrap_or(false) {
@@ -2353,10 +2543,12 @@ impl NeuroMcpFacade {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
             })?;
-        let transport = args.transport.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "transport is required".to_owned(),
-        })?;
+        let transport = args
+            .transport
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "transport is required".to_owned(),
+            })?;
         let endpoint = format!(
             "/sap/bc/adt/cts/transportrequests/{}",
             encode_path_segment(transport.trim().to_ascii_uppercase().as_str())
@@ -2379,12 +2571,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: RunReportArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: RunReportArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let report = args.report.ok_or_else(|| NeuroMcpError::InvalidArguments {
             tool: tool_name.to_owned(),
             message: "report is required".to_owned(),
@@ -2408,12 +2599,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: ReportNameArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: ReportNameArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let report = args.report.ok_or_else(|| NeuroMcpError::InvalidArguments {
             tool: tool_name.to_owned(),
             message: "report is required".to_owned(),
@@ -2427,16 +2617,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: GetTextElementsArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: GetTextElementsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let program = args.program.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "program is required".to_owned(),
-        })?;
+            })?;
+        let program = args
+            .program
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "program is required".to_owned(),
+            })?;
         let mut payload = serde_json::Map::new();
         payload.insert("program".to_owned(), json!(program));
         if let Some(language) = args.language {
@@ -2453,16 +2644,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: SetTextElementsArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: SetTextElementsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let program = args.program.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "program is required".to_owned(),
-        })?;
+            })?;
+        let program = args
+            .program
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "program is required".to_owned(),
+            })?;
         let mut payload = serde_json::Map::new();
         payload.insert("program".to_owned(), json!(program));
         if let Some(language) = args.language {
@@ -2488,7 +2680,10 @@ impl NeuroMcpFacade {
         action: &str,
         payload: Value,
     ) -> Result<Value, NeuroMcpError> {
-        let response = self.engine.send_domain_request("report", action, payload).await?;
+        let response = self
+            .engine
+            .send_domain_request("report", action, payload)
+            .await?;
         serde_json::to_value(response).map_err(Into::into)
     }
 
@@ -2519,16 +2714,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: BreakpointIdArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: BreakpointIdArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let breakpoint_id = args.breakpoint_id.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "breakpoint_id is required".to_owned(),
-        })?;
+            })?;
+        let breakpoint_id = args
+            .breakpoint_id
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "breakpoint_id is required".to_owned(),
+            })?;
         self.handle_debug_ws_call("deleteBreakpoint", json!({ "breakpointId": breakpoint_id }))
             .await
     }
@@ -2538,12 +2734,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: DebuggerListenArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: DebuggerListenArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let timeout = args.timeout.unwrap_or(60).clamp(1, 240);
         let user = std::env::var("NEURO_SAP_USER")
             .unwrap_or_default()
@@ -2562,16 +2757,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: DebuggeeArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: DebuggeeArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let debuggee_id = args.debuggee_id.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "debuggee_id is required".to_owned(),
-        })?;
+            })?;
+        let debuggee_id = args
+            .debuggee_id
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "debuggee_id is required".to_owned(),
+            })?;
         self.handle_debug_ws_call("attach", json!({ "debuggeeId": debuggee_id }))
             .await
     }
@@ -2589,14 +2785,14 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: StepArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: StepArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let step_type = args.step_type.unwrap_or_else(|| "into".to_owned());
-        self.handle_debug_ws_call("step", json!({ "type": step_type })).await
+        self.handle_debug_ws_call("step", json!({ "type": step_type }))
+            .await
     }
 
     async fn handle_debugger_get_stack(
@@ -2612,12 +2808,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: VariablesScopeArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: VariablesScopeArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let scope = args.scope.unwrap_or_else(|| "system".to_owned());
         self.handle_debug_ws_call("getVariables", json!({ "scope": scope }))
             .await
@@ -2628,12 +2823,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: AmdpStartArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: AmdpStartArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let cascade_mode = args.cascade_mode.unwrap_or_else(|| "FULL".to_owned());
         let user = std::env::var("NEURO_SAP_USER")
             .unwrap_or_default()
@@ -2668,12 +2862,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: StepArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: StepArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let step_type = args.step_type.unwrap_or_else(|| "over".to_owned());
         self.handle_amdp_ws_call("step", json!({ "type": step_type }))
             .await
@@ -2692,16 +2885,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: AmdpBreakpointArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: AmdpBreakpointArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let program = args.program.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "program is required".to_owned(),
-        })?;
+            })?;
+        let program = args
+            .program
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "program is required".to_owned(),
+            })?;
         let line = args.line.ok_or_else(|| NeuroMcpError::InvalidArguments {
             tool: tool_name.to_owned(),
             message: "line is required".to_owned(),
@@ -2723,7 +2917,10 @@ impl NeuroMcpFacade {
         action: &str,
         payload: Value,
     ) -> Result<Value, NeuroMcpError> {
-        let response = self.engine.send_domain_request("debug", action, payload).await?;
+        let response = self
+            .engine
+            .send_domain_request("debug", action, payload)
+            .await?;
         serde_json::to_value(response).map_err(Into::into)
     }
 
@@ -2732,7 +2929,10 @@ impl NeuroMcpFacade {
         action: &str,
         payload: Value,
     ) -> Result<Value, NeuroMcpError> {
-        let response = self.engine.send_domain_request("amdp", action, payload).await?;
+        let response = self
+            .engine
+            .send_domain_request("amdp", action, payload)
+            .await?;
         serde_json::to_value(response).map_err(Into::into)
     }
 
@@ -2741,12 +2941,11 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: Ui5ListAppsArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: Ui5ListAppsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
         let max_results = args.max_results.unwrap_or(100).max(1);
         let mut query = vec![("maxResults", max_results.to_string())];
         if let Some(query_name) = args.query {
@@ -2767,16 +2966,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: Ui5AppArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: Ui5AppArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "app_name is required".to_owned(),
-        })?;
+            })?;
+        let app_name = args
+            .app_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "app_name is required".to_owned(),
+            })?;
         let app_name = app_name.trim().to_ascii_uppercase();
         let endpoint = format!(
             "/sap/bc/adt/filestore/ui5-bsp/objects/{}/content",
@@ -2797,20 +2997,23 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: Ui5FileArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: Ui5FileArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "app_name is required".to_owned(),
-        })?;
-        let file_path = args.file_path.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "file_path is required".to_owned(),
-        })?;
+            })?;
+        let app_name = args
+            .app_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "app_name is required".to_owned(),
+            })?;
+        let file_path = args
+            .file_path
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "file_path is required".to_owned(),
+            })?;
         let endpoint = build_ui5_file_content_path(app_name.as_str(), file_path.as_str());
         let raw = self.engine.get_raw_text(endpoint.as_str(), None).await?;
         Ok(json!({
@@ -2825,24 +3028,29 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: Ui5UploadFileArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: Ui5UploadFileArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "app_name is required".to_owned(),
-        })?;
-        let file_path = args.file_path.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "file_path is required".to_owned(),
-        })?;
-        let content = args.content.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "content is required".to_owned(),
-        })?;
+            })?;
+        let app_name = args
+            .app_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "app_name is required".to_owned(),
+            })?;
+        let file_path = args
+            .file_path
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "file_path is required".to_owned(),
+            })?;
+        let content = args
+            .content
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "content is required".to_owned(),
+            })?;
         let endpoint = build_ui5_file_content_path(app_name.as_str(), file_path.as_str());
         let raw = self
             .engine
@@ -2869,20 +3077,23 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: Ui5FileArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: Ui5FileArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "app_name is required".to_owned(),
-        })?;
-        let file_path = args.file_path.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "file_path is required".to_owned(),
-        })?;
+            })?;
+        let app_name = args
+            .app_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "app_name is required".to_owned(),
+            })?;
+        let file_path = args
+            .file_path
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "file_path is required".to_owned(),
+            })?;
         let app_upper = app_name.trim().to_ascii_uppercase();
         let file_rel = file_path.trim().trim_start_matches('/');
         let full_path = format!("{app_upper}/{file_rel}");
@@ -2903,24 +3114,29 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: Ui5CreateAppArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: Ui5CreateAppArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "app_name is required".to_owned(),
-        })?;
-        let description = args.description.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "description is required".to_owned(),
-        })?;
-        let package_name = args.package_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "package_name is required".to_owned(),
-        })?;
+            })?;
+        let app_name = args
+            .app_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "app_name is required".to_owned(),
+            })?;
+        let description = args
+            .description
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "description is required".to_owned(),
+            })?;
+        let package_name = args
+            .package_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "package_name is required".to_owned(),
+            })?;
 
         let mut query = Vec::new();
         if let Some(transport) = args.transport {
@@ -2956,16 +3172,17 @@ impl NeuroMcpFacade {
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: Ui5DeleteAppArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: Ui5DeleteAppArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
-        let app_name = args.app_name.ok_or_else(|| NeuroMcpError::InvalidArguments {
-            tool: tool_name.to_owned(),
-            message: "app_name is required".to_owned(),
-        })?;
+            })?;
+        let app_name = args
+            .app_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "app_name is required".to_owned(),
+            })?;
         let app_upper = app_name.trim().to_ascii_uppercase();
         let mut endpoint = format!(
             "/sap/bc/adt/filestore/ui5-bsp/objects/{}",
@@ -2983,17 +3200,2351 @@ impl NeuroMcpFacade {
         }))
     }
 
+    async fn handle_call_rfc(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CallRfcArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let function = args
+            .function
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "function is required".to_owned(),
+            })?;
+
+        let mut payload = serde_json::Map::new();
+        payload.insert("function".to_owned(), json!(function));
+        if let Some(params) = args.params {
+            let params_value = if let Some(params_str) = params.as_str() {
+                serde_json::from_str::<Value>(params_str).unwrap_or_else(|_| json!(params_str))
+            } else {
+                params
+            };
+            if let Some(object) = params_value.as_object() {
+                for (key, value) in object {
+                    payload.insert(key.clone(), value.clone());
+                }
+            } else {
+                payload.insert("params".to_owned(), params_value);
+            }
+        }
+        let response = self
+            .engine
+            .send_domain_request("rfc", "call", Value::Object(payload))
+            .await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
+    async fn handle_move_object(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: MoveObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_type = args
+            .object_type
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "object_type is required".to_owned(),
+            })?;
+        let object_name = args
+            .object_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "object_name is required".to_owned(),
+            })?;
+        let new_package = args
+            .new_package
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "new_package is required".to_owned(),
+            })?;
+        let response = self
+            .engine
+            .send_domain_request(
+                "rfc",
+                "moveToPackage",
+                json!({
+                    "object": object_type,
+                    "obj_name": object_name,
+                    "new_package": new_package,
+                }),
+            )
+            .await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
+    async fn handle_get_type_hierarchy(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetTypeHierarchyArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let source_url = args
+            .source_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "source_url is required".to_owned(),
+            })?;
+        let source = args.source.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "source is required".to_owned(),
+        })?;
+        let line = args
+            .line
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "line is required".to_owned(),
+            })?
+            .max(1);
+        let column = args
+            .column
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "column is required".to_owned(),
+            })?
+            .max(1);
+        let type_param = if args.super_types.unwrap_or(false) {
+            "superTypes"
+        } else {
+            "subTypes"
+        };
+        let uri = format!("{source_url}#start={line},{column}");
+        let endpoint = build_path_with_query(
+            "/sap/bc/adt/abapsource/typehierarchy",
+            &[("uri", uri), ("type", type_param.to_owned())],
+        );
+        let raw = self
+            .engine
+            .post_raw_text(
+                endpoint.as_str(),
+                Some(source.as_str()),
+                Some("text/plain"),
+                Some("application/*"),
+            )
+            .await?;
+        Ok(json!({
+            "sourceUrl": source_url,
+            "line": line,
+            "column": column,
+            "type": type_param,
+            "raw": raw,
+        }))
+    }
+
+    async fn handle_git_types(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let response = self
+            .engine
+            .send_domain_request("git", "getTypes", json!({}))
+            .await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
+    async fn handle_git_export(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GitExportArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let mut payload = serde_json::Map::new();
+        if let Some(packages) = args.packages {
+            let items = packages
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>();
+            if !items.is_empty() {
+                payload.insert("packages".to_owned(), json!(items));
+            }
+        }
+        if let Some(objects) = args.objects {
+            let parsed = serde_json::from_str::<Value>(objects.as_str()).map_err(|error| {
+                NeuroMcpError::InvalidArguments {
+                    tool: tool_name.to_owned(),
+                    message: format!("invalid objects JSON: {error}"),
+                }
+            })?;
+            payload.insert("objects".to_owned(), parsed);
+        }
+        payload.insert(
+            "includeSubpackages".to_owned(),
+            json!(args.include_subpackages.unwrap_or(true)),
+        );
+
+        if !payload.contains_key("packages") && !payload.contains_key("objects") {
+            return Err(NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "either packages or objects parameter is required".to_owned(),
+            });
+        }
+
+        let response = self
+            .engine
+            .send_domain_request("git", "export", Value::Object(payload))
+            .await?;
+        serde_json::to_value(response).map_err(Into::into)
+    }
+
+    async fn update_source_with_lock(
+        &self,
+        source_uri: &str,
+        source: &str,
+        lock_handle: &str,
+        transport: Option<&str>,
+    ) -> Result<String, NeuroMcpError> {
+        let mut query = vec![("lockHandle", lock_handle.to_owned())];
+        if let Some(transport) = transport {
+            if !transport.trim().is_empty() {
+                query.push(("corrNr", transport.trim().to_owned()));
+            }
+        }
+        let endpoint = build_path_with_query(source_uri, &query);
+        self.engine
+            .put_raw_text(
+                endpoint.as_str(),
+                Some(source),
+                Some("text/plain"),
+                Some("application/*"),
+            )
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn handle_get_class_info(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetClassInfoArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let class_name = args
+            .class_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "class_name/className/name is required".to_owned(),
+            })?;
+        let class_name = class_name.trim().to_ascii_uppercase();
+
+        let structure_endpoint = build_path_with_query(
+            "/sap/bc/adt/cai/objectexplorer/objects",
+            &[
+                ("objectName", class_name.clone()),
+                ("maxResults", "100".to_owned()),
+            ],
+        );
+        let structure_raw = self
+            .engine
+            .get_raw_text(structure_endpoint.as_str(), Some("application/xml"))
+            .await?;
+        let source_uri = format!(
+            "/sap/bc/adt/oo/classes/{}/source/main",
+            encode_path_segment(class_name.as_str())
+        );
+        let source_raw = self
+            .engine
+            .get_raw_text(source_uri.as_str(), Some("text/plain"))
+            .await
+            .unwrap_or_default();
+
+        let mut methods = BTreeSet::new();
+        let mut attributes = BTreeSet::new();
+        let mut interfaces = BTreeSet::new();
+        let mut has_test_class = false;
+
+        for reference in parse_xml_references(structure_raw.as_str()) {
+            let typ = reference.object_type.to_ascii_uppercase();
+            if typ.contains("METHOD") {
+                methods.insert(reference.name);
+            } else if typ.contains("ATTR") {
+                attributes.insert(reference.name);
+            } else if typ.contains("INTF") {
+                interfaces.insert(reference.name);
+            } else if typ.contains("TEST") {
+                has_test_class = true;
+            }
+        }
+
+        let source_upper = source_raw.to_ascii_uppercase();
+        let is_abstract = source_upper.contains(" DEFINITION ABSTRACT");
+        let is_final = source_upper.contains(" DEFINITION FINAL");
+        let category = if is_abstract {
+            "Abstract"
+        } else if is_final {
+            "Final"
+        } else {
+            "Regular"
+        };
+
+        Ok(json!({
+            "name": class_name,
+            "category": category,
+            "isAbstract": is_abstract,
+            "isFinal": is_final,
+            "hasTestClass": has_test_class,
+            "methods": methods.into_iter().collect::<Vec<_>>(),
+            "attributes": attributes.into_iter().collect::<Vec<_>>(),
+            "interfaces": interfaces.into_iter().collect::<Vec<_>>(),
+            "raw": {
+                "structure": structure_raw,
+                "source": source_raw,
+            }
+        }))
+    }
+
+    async fn handle_trace_execution(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: TraceExecutionArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_uri = args
+            .object_uri
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "object_uri/objectUri is required".to_owned(),
+            })?;
+        let max_depth = args.max_depth.unwrap_or(5).max(1);
+        let static_graph = self
+            .request_call_graph(object_uri.as_str(), "callees", max_depth, 1000)
+            .await
+            .ok();
+
+        let mut executed_tests = Value::Null;
+        if args.run_tests.unwrap_or(false) {
+            let test_object_uri = args
+                .test_object_uri
+                .clone()
+                .unwrap_or_else(|| object_uri.clone());
+            executed_tests = self
+                .handle_run_unit_tests(json!({ "objectUrl": test_object_uri }), "RunUnitTests")
+                .await
+                .unwrap_or_else(|error| json!({ "error": error.to_string() }));
+        }
+
+        let trace_user = args.trace_user.unwrap_or_default();
+        let list_traces = self
+            .handle_list_traces(
+                json!({
+                    "user": if trace_user.trim().is_empty() { Value::Null } else { json!(trace_user) },
+                    "max_results": 5
+                }),
+                "ListTraces",
+            )
+            .await?;
+        let traces_raw = list_traces
+            .get("raw")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let latest_trace_id = extract_first_tag_value(traces_raw.as_str(), "id");
+
+        let trace_analysis = if let Some(trace_id) = latest_trace_id.clone() {
+            self.handle_get_trace(
+                json!({ "trace_id": normalize_trace_id(trace_id.as_str()), "tool_type": "hitlist" }),
+                "GetTrace",
+            )
+            .await
+            .unwrap_or_else(|error| json!({ "error": error.to_string() }))
+        } else {
+            Value::Null
+        };
+
+        Ok(json!({
+            "object_uri": object_uri,
+            "max_depth": max_depth,
+            "static_call_graph": static_graph,
+            "list_traces": list_traces,
+            "latest_trace_analysis": trace_analysis,
+            "executed_tests": executed_tests
+        }))
+    }
+
+    async fn handle_activate_package(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ActivatePackageArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let package_filter = args.package.unwrap_or_default().trim().to_ascii_uppercase();
+        let max_objects = args.max_objects.unwrap_or(100).max(1) as usize;
+
+        let raw = self
+            .engine
+            .get_raw_text(
+                "/sap/bc/adt/activation/inactiveobjects",
+                Some("application/vnd.sap.adt.inactivectsobjects.v1+xml, application/xml;q=0.8"),
+            )
+            .await?;
+
+        let mut refs = parse_xml_references(raw.as_str())
+            .into_iter()
+            .filter(|reference| !reference.uri.is_empty())
+            .collect::<Vec<_>>();
+        if !package_filter.is_empty() {
+            let expected = format!(
+                "/sap/bc/adt/packages/{}",
+                package_filter.to_ascii_lowercase()
+            );
+            refs.retain(|reference| {
+                reference
+                    .parent_uri
+                    .as_deref()
+                    .is_some_and(|parent| parent.eq_ignore_ascii_case(expected.as_str()))
+            });
+        }
+        refs.sort_by_key(|reference| object_type_priority(reference.object_type.as_str()));
+        refs.truncate(max_objects);
+
+        let mut activated = Vec::new();
+        let mut failed = Vec::new();
+        for reference in refs {
+            let body = format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<adtcore:objectReferences xmlns:adtcore=\"http://www.sap.com/adt/core\">\n  <adtcore:objectReference adtcore:uri=\"{}\" adtcore:name=\"{}\"/>\n</adtcore:objectReferences>",
+                escape_xml(reference.uri.as_str()),
+                escape_xml(reference.name.as_str())
+            );
+            match self
+                .engine
+                .post_raw_text(
+                    "/sap/bc/adt/activation?method=activate&preauditRequested=true",
+                    Some(body.as_str()),
+                    Some("application/xml"),
+                    None,
+                )
+                .await
+            {
+                Ok(response_raw) => activated.push(json!({
+                    "name": reference.name,
+                    "type": reference.object_type,
+                    "uri": reference.uri,
+                    "raw": response_raw,
+                })),
+                Err(error) => failed.push(json!({
+                    "name": reference.name,
+                    "type": reference.object_type,
+                    "uri": reference.uri,
+                    "reason": error.to_string(),
+                })),
+            }
+        }
+
+        Ok(json!({
+            "activated": activated,
+            "failed": failed,
+            "summary": format!(
+                "Activated {} objects, {} failed",
+                activated.len(),
+                failed.len()
+            )
+        }))
+    }
+
+    async fn handle_list_dumps(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ListDumpsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let mut query = Vec::new();
+        let mut filters = Vec::new();
+        if let Some(user) = args.user.filter(|value| !value.trim().is_empty()) {
+            filters.push(format!("user eq '{}'", user.trim()));
+        }
+        if let Some(exception_type) = args.exception_type.filter(|value| !value.trim().is_empty()) {
+            filters.push(format!("exceptionType eq '{}'", exception_type.trim()));
+        }
+        if let Some(program) = args.program.filter(|value| !value.trim().is_empty()) {
+            filters.push(format!("program eq '{}'", program.trim()));
+        }
+        if let Some(package) = args.package.filter(|value| !value.trim().is_empty()) {
+            filters.push(format!("package eq '{}'", package.trim()));
+        }
+        if let Some(date_from) = args.date_from.filter(|value| !value.trim().is_empty()) {
+            filters.push(format!("datetime ge '{}000000'", date_from.trim()));
+        }
+        if let Some(date_to) = args.date_to.filter(|value| !value.trim().is_empty()) {
+            filters.push(format!("datetime le '{}235959'", date_to.trim()));
+        }
+        if !filters.is_empty() {
+            query.push(("$filter", filters.join(" and ")));
+        }
+        query.push(("$top", args.max_results.unwrap_or(100).max(1).to_string()));
+        let endpoint = build_path_with_query("/sap/bc/adt/runtime/dumps", &query);
+        let raw = self
+            .engine
+            .get_raw_text(endpoint.as_str(), Some("application/atom+xml;type=feed"))
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_get_dump(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetDumpArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let dump_id = args
+            .dump_id
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "dump_id is required".to_owned(),
+            })?;
+        let normalized_id = normalize_dump_id(dump_id.as_str());
+        let endpoint = format!(
+            "/sap/bc/adt/runtime/dump/{}",
+            encode_path_segment(normalized_id.as_str())
+        );
+        let raw = self
+            .engine
+            .get_raw_text(endpoint.as_str(), Some("text/html"))
+            .await?;
+        Ok(json!({
+            "dump_id": normalized_id,
+            "raw": raw
+        }))
+    }
+
+    async fn handle_list_traces(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ListTracesArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let mut query = Vec::new();
+        if let Some(user) = args.user.filter(|value| !value.trim().is_empty()) {
+            query.push(("user", user.trim().to_owned()));
+        }
+        if let Some(process_type) = args.process_type.filter(|value| !value.trim().is_empty()) {
+            query.push(("processType", process_type.trim().to_owned()));
+        }
+        if let Some(object_type) = args.object_type.filter(|value| !value.trim().is_empty()) {
+            query.push(("objectType", object_type.trim().to_owned()));
+        }
+        query.push(("$top", args.max_results.unwrap_or(100).max(1).to_string()));
+        let endpoint = build_path_with_query("/sap/bc/adt/runtime/traces/abaptraces", &query);
+        let raw = self
+            .engine
+            .get_raw_text(endpoint.as_str(), Some("application/atom+xml"))
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_get_trace(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetTraceArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let trace_id = args
+            .trace_id
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "trace_id is required".to_owned(),
+            })?;
+        let tool_type = args.tool_type.unwrap_or_else(|| "hitlist".to_owned());
+        let endpoint = format!(
+            "/sap/bc/adt/runtime/traces/abaptraces/{}/{}",
+            encode_path_segment(normalize_trace_id(trace_id.as_str()).as_str()),
+            encode_path_segment(tool_type.as_str())
+        );
+        let raw = self
+            .engine
+            .get_raw_text(endpoint.as_str(), Some("application/xml"))
+            .await?;
+        Ok(json!({
+            "trace_id": normalize_trace_id(trace_id.as_str()),
+            "tool_type": tool_type,
+            "raw": raw
+        }))
+    }
+
+    async fn handle_get_sql_trace_state(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let raw = self
+            .engine
+            .get_raw_text("/sap/bc/adt/st05/trace/state", Some("application/xml"))
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_list_sql_traces(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ListSqlTracesArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let mut query = Vec::new();
+        if let Some(user) = args.user.filter(|value| !value.trim().is_empty()) {
+            query.push(("user", user.trim().to_owned()));
+        }
+        query.push(("$top", args.max_results.unwrap_or(100).max(1).to_string()));
+        let endpoint = build_path_with_query("/sap/bc/adt/st05/trace/directory", &query);
+        let raw = self
+            .engine
+            .get_raw_text(endpoint.as_str(), Some("application/atom+xml"))
+            .await?;
+        Ok(json!({ "raw": raw }))
+    }
+
+    async fn handle_run_report_async(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: RunReportArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let report = args.report.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "report is required".to_owned(),
+        })?;
+        let mut payload = serde_json::Map::new();
+        payload.insert("report".to_owned(), json!(report));
+        if let Some(variant) = args.variant {
+            if !variant.trim().is_empty() {
+                payload.insert("variant".to_owned(), json!(variant));
+            }
+        }
+        if let Some(params) = args.params {
+            payload.insert("params".to_owned(), params);
+        }
+        let response = self
+            .engine
+            .send_domain_request("report", "runReport", Value::Object(payload))
+            .await?;
+        let payload = response.payload;
+        let job_name = extract_json_string(&payload, &["jobname", "jobName", "job_name"])
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "runReport response does not contain job name".to_owned(),
+            })?;
+        let job_count = extract_json_string(&payload, &["jobcount", "jobCount", "job_count"])
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "runReport response does not contain job count".to_owned(),
+            })?;
+        let task_payload = json!({
+            "job_name": job_name,
+            "job_count": job_count,
+            "report": extract_json_string(&payload, &["report"]).unwrap_or_default()
+        });
+        let task_id =
+            base64::engine::general_purpose::STANDARD.encode(task_payload.to_string().as_bytes());
+        Ok(json!({
+            "task_id": task_id,
+            "status": "started",
+            "message": "Report execution started in background. Use GetAsyncResult to check status.",
+            "job_name": task_payload["job_name"],
+            "job_count": task_payload["job_count"]
+        }))
+    }
+
+    async fn handle_get_async_result(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GetAsyncResultArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let task_id = args
+            .task_id
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "task_id is required".to_owned(),
+            })?;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(task_id.as_bytes())
+            .map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("invalid task_id: {error}"),
+            })?;
+        let decoded_json: Value = serde_json::from_slice(decoded.as_slice()).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("task_id payload is invalid JSON: {error}"),
+            }
+        })?;
+        let job_name = extract_json_string(&decoded_json, &["job_name"]).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "task_id missing job_name".to_owned(),
+            }
+        })?;
+        let job_count = extract_json_string(&decoded_json, &["job_count"]).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "task_id missing job_count".to_owned(),
+            }
+        })?;
+        let status_response = self
+            .engine
+            .send_domain_request(
+                "report",
+                "getJobStatus",
+                json!({
+                    "jobname": job_name,
+                    "jobcount": job_count
+                }),
+            )
+            .await?;
+
+        let mut spool_outputs = Vec::new();
+        let spool_ids =
+            extract_json_string_array(&status_response.payload, &["spool_ids", "spoolIds"]);
+        for spool_id in spool_ids {
+            let spool_response = self
+                .engine
+                .send_domain_request("report", "getSpoolOutput", json!({ "spool_id": spool_id }))
+                .await?;
+            spool_outputs.push(serde_json::to_value(spool_response)?);
+        }
+
+        Ok(json!({
+            "task_id": task_id,
+            "wait": args.wait.unwrap_or(false),
+            "status": status_response,
+            "spool_outputs": spool_outputs
+        }))
+    }
+
+    async fn handle_create_and_activate_program(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CreateAndActivateProgramArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let program_name = args
+            .program_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "program_name is required".to_owned(),
+            })?;
+        let description = args
+            .description
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "description is required".to_owned(),
+            })?;
+        let package_name = args
+            .package_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "package_name is required".to_owned(),
+            })?;
+        let source = args.source.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "source is required".to_owned(),
+        })?;
+        let transport = args.transport.unwrap_or_default();
+        let program_name = program_name.trim().to_ascii_uppercase();
+        let package_name = package_name.trim().to_ascii_uppercase();
+        let create_args = CreateObjectArgs {
+            object_type: Some("PROG/P".to_owned()),
+            name: Some(program_name.clone()),
+            description: Some(description),
+            package_name: Some(package_name),
+            transport: if transport.trim().is_empty() {
+                None
+            } else {
+                Some(transport.clone())
+            },
+            parent_name: None,
+            responsible: None,
+            software_component: None,
+            service_definition: None,
+            binding_type: None,
+            binding_version: None,
+            binding_category: None,
+        };
+        self.create_object_request(&create_args, tool_name).await?;
+
+        let object_url = build_object_url("PROG/P", program_name.as_str(), None);
+        let lock = self
+            .handle_lock_object(
+                json!({
+                    "objectUrl": object_url,
+                    "accessMode": "MODIFY"
+                }),
+                "LockObject",
+            )
+            .await?;
+        let lock_handle = extract_json_string(&lock, &["lockHandle"]).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "LockObject did not return lockHandle".to_owned(),
+            }
+        })?;
+        let source_url = format!("{object_url}/source/main");
+        self.update_source_with_lock(
+            source_url.as_str(),
+            source.as_str(),
+            lock_handle.as_str(),
+            Some(transport.as_str()),
+        )
+        .await?;
+        self.handle_unlock_object(
+            json!({ "objectUrl": object_url, "lockHandle": lock_handle }),
+            "UnlockObject",
+        )
+        .await?;
+        let activation = self
+            .handle_activate(
+                json!({
+                    "objectUrl": object_url,
+                    "objectName": program_name
+                }),
+                "Activate",
+            )
+            .await?;
+        Ok(json!({
+            "success": true,
+            "programName": program_name,
+            "objectUrl": object_url,
+            "activation": activation
+        }))
+    }
+
+    async fn handle_create_class_with_tests(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CreateClassWithTestsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let class_name = args
+            .class_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "class_name is required".to_owned(),
+            })?;
+        let description = args
+            .description
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "description is required".to_owned(),
+            })?;
+        let package_name = args
+            .package_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "package_name is required".to_owned(),
+            })?;
+        let class_source = args
+            .class_source
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "class_source is required".to_owned(),
+            })?;
+        let test_source = args
+            .test_source
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "test_source is required".to_owned(),
+            })?;
+        let transport = args.transport.unwrap_or_default();
+        let class_name = class_name.trim().to_ascii_uppercase();
+        let create_args = CreateObjectArgs {
+            object_type: Some("CLAS/OC".to_owned()),
+            name: Some(class_name.clone()),
+            description: Some(description),
+            package_name: Some(package_name.trim().to_ascii_uppercase()),
+            transport: if transport.trim().is_empty() {
+                None
+            } else {
+                Some(transport.clone())
+            },
+            parent_name: None,
+            responsible: None,
+            software_component: None,
+            service_definition: None,
+            binding_type: None,
+            binding_version: None,
+            binding_category: None,
+        };
+        self.create_object_request(&create_args, tool_name).await?;
+
+        let object_url = build_object_url("CLAS/OC", class_name.as_str(), None);
+        let lock = self
+            .handle_lock_object(
+                json!({ "objectUrl": object_url, "accessMode": "MODIFY" }),
+                "LockObject",
+            )
+            .await?;
+        let lock_handle = extract_json_string(&lock, &["lockHandle"]).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "LockObject did not return lockHandle".to_owned(),
+            }
+        })?;
+
+        self.update_source_with_lock(
+            format!("{object_url}/source/main").as_str(),
+            class_source.as_str(),
+            lock_handle.as_str(),
+            Some(transport.as_str()),
+        )
+        .await?;
+        self.handle_create_test_include(
+            json!({
+                "className": class_name,
+                "lockHandle": lock_handle,
+                "transport": transport
+            }),
+            "CreateTestInclude",
+        )
+        .await?;
+        self.handle_update_class_include(
+            json!({
+                "className": class_name,
+                "includeType": "testclasses",
+                "source": test_source,
+                "lockHandle": lock_handle,
+                "transport": transport
+            }),
+            "UpdateClassInclude",
+        )
+        .await?;
+        self.handle_unlock_object(
+            json!({ "objectUrl": object_url, "lockHandle": lock_handle }),
+            "UnlockObject",
+        )
+        .await?;
+        let activation = self
+            .handle_activate(
+                json!({ "objectUrl": object_url, "objectName": class_name }),
+                "Activate",
+            )
+            .await?;
+        let unit_tests = self
+            .handle_run_unit_tests(json!({ "objectUrl": object_url }), "RunUnitTests")
+            .await
+            .unwrap_or_else(|error| json!({ "error": error.to_string() }));
+        Ok(json!({
+            "success": true,
+            "className": class_name,
+            "objectUrl": object_url,
+            "activation": activation,
+            "unitTests": unit_tests
+        }))
+    }
+
+    async fn handle_create_table(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CreateTableArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let table_name = args.name.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "name is required".to_owned(),
+        })?;
+        let description = args
+            .description
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "description is required".to_owned(),
+            })?;
+        let package_name = args.package.unwrap_or_else(|| "$TMP".to_owned());
+        let delivery_class = args.delivery_class.unwrap_or_else(|| "A".to_owned());
+        let table_name = table_name.trim().to_ascii_uppercase();
+        let fields = parse_table_fields(args.fields, tool_name)?;
+        if fields.is_empty() {
+            return Err(NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "at least one field is required".to_owned(),
+            });
+        }
+        let mut query = Vec::new();
+        if let Some(transport) = args.transport.clone() {
+            if !transport.trim().is_empty() {
+                query.push(("corrNr", transport));
+            }
+        }
+        let create_endpoint = build_path_with_query("/sap/bc/adt/ddic/tables", &query);
+        let create_body = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<blue:blueSource xmlns:blue=\"http://www.sap.com/wbobj/blue\"\n                 xmlns:adtcore=\"http://www.sap.com/adt/core\"\n                 adtcore:name=\"{}\"\n                 adtcore:type=\"TABL/DT\"\n                 adtcore:description=\"{}\">\n  <adtcore:packageRef adtcore:name=\"{}\"/>\n</blue:blueSource>",
+            escape_xml(table_name.as_str()),
+            escape_xml(description.as_str()),
+            escape_xml(package_name.trim().to_ascii_uppercase().as_str())
+        );
+        self.engine
+            .post_raw_text(
+                create_endpoint.as_str(),
+                Some(create_body.as_str()),
+                Some("application/vnd.sap.adt.tables.v2+xml"),
+                Some("application/vnd.sap.adt.tables.v2+xml"),
+            )
+            .await?;
+
+        let table_url = format!(
+            "/sap/bc/adt/ddic/tables/{}",
+            encode_path_segment(table_name.to_ascii_lowercase().as_str())
+        );
+        let lock = self
+            .handle_lock_object(
+                json!({ "objectUrl": table_url, "accessMode": "MODIFY" }),
+                "LockObject",
+            )
+            .await?;
+        let lock_handle = extract_json_string(&lock, &["lockHandle"]).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "LockObject did not return lockHandle".to_owned(),
+            }
+        })?;
+        let ddl = build_table_ddl(
+            table_name.as_str(),
+            description.as_str(),
+            delivery_class.as_str(),
+            fields.as_slice(),
+        );
+        self.update_source_with_lock(
+            format!("{table_url}/source/main").as_str(),
+            ddl.as_str(),
+            lock_handle.as_str(),
+            args.transport.as_deref(),
+        )
+        .await?;
+        self.handle_unlock_object(
+            json!({ "objectUrl": table_url, "lockHandle": lock_handle }),
+            "UnlockObject",
+        )
+        .await?;
+        let activation = self
+            .handle_activate(
+                json!({ "objectUrl": table_url, "objectName": table_name }),
+                "Activate",
+            )
+            .await?;
+        Ok(json!({
+            "status": "created",
+            "table": table_name,
+            "package": package_name,
+            "field_count": fields.len(),
+            "activation": activation
+        }))
+    }
+
+    async fn handle_compare_source(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CompareSourceArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let type1 = args.type1.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "type1 is required".to_owned(),
+        })?;
+        let name1 = args.name1.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "name1 is required".to_owned(),
+        })?;
+        let type2 = args.type2.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "type2 is required".to_owned(),
+        })?;
+        let name2 = args.name2.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "name2 is required".to_owned(),
+        })?;
+
+        let source_uri_1 = resolve_source_uri(
+            type1.as_str(),
+            name1.as_str(),
+            args.parent1.as_deref(),
+            args.include1.as_deref(),
+        )
+        .ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: format!("unsupported type1 `{}`", type1),
+        })?;
+        let source_uri_2 = resolve_source_uri(
+            type2.as_str(),
+            name2.as_str(),
+            args.parent2.as_deref(),
+            args.include2.as_deref(),
+        )
+        .ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: format!("unsupported type2 `{}`", type2),
+        })?;
+        let source_1 = self
+            .engine
+            .get_raw_text(source_uri_1.as_str(), Some("text/plain"))
+            .await?;
+        let source_2 = self
+            .engine
+            .get_raw_text(source_uri_2.as_str(), Some("text/plain"))
+            .await?;
+        let diff = generate_line_diff(
+            format!("{}:{}", type1, name1).as_str(),
+            format!("{}:{}", type2, name2).as_str(),
+            source_1.as_str(),
+            source_2.as_str(),
+        );
+        Ok(json!(diff))
+    }
+
+    async fn handle_clone_object(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: CloneObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_type = args
+            .object_type
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "object_type is required".to_owned(),
+            })?;
+        let source_name = args
+            .source_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "source_name is required".to_owned(),
+            })?;
+        let target_name = args
+            .target_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "target_name is required".to_owned(),
+            })?;
+        let package_name = args
+            .package
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "package is required".to_owned(),
+            })?;
+
+        let source_uri = resolve_source_uri(object_type.as_str(), source_name.as_str(), None, None)
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("unsupported object_type `{}`", object_type),
+            })?;
+        let source = self
+            .engine
+            .get_raw_text(source_uri.as_str(), Some("text/plain"))
+            .await?;
+        let target_upper = target_name.trim().to_ascii_uppercase();
+        let source_upper = source_name.trim().to_ascii_uppercase();
+        let replacement_pattern = match object_type.trim().to_ascii_uppercase().as_str() {
+            "PROG" | "PROG/P" => {
+                format!(r"(?i)(REPORT\s+){}", regex::escape(source_upper.as_str()))
+            }
+            "CLAS" | "CLAS/OC" => {
+                format!(r"(?i)(CLASS\s+){}", regex::escape(source_upper.as_str()))
+            }
+            "INTF" | "INTF/OI" => {
+                format!(
+                    r"(?i)(INTERFACE\s+){}",
+                    regex::escape(source_upper.as_str())
+                )
+            }
+            _ => {
+                return Err(NeuroMcpError::InvalidArguments {
+                    tool: tool_name.to_owned(),
+                    message: "CloneObject currently supports PROG, CLAS, INTF".to_owned(),
+                });
+            }
+        };
+        let re = Regex::new(replacement_pattern.as_str()).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("failed to build clone regex: {error}"),
+            }
+        })?;
+        let cloned_source = re
+            .replace_all(source.as_str(), format!("${{1}}{target_upper}"))
+            .to_string();
+
+        let create_type = normalize_creatable_type(object_type.as_str()).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("unsupported object_type `{}`", object_type),
+            }
+        })?;
+        let create_args = CreateObjectArgs {
+            object_type: Some(create_type.to_owned()),
+            name: Some(target_upper.clone()),
+            description: Some(format!("Copy of {}", source_upper)),
+            package_name: Some(package_name.trim().to_ascii_uppercase()),
+            transport: None,
+            parent_name: None,
+            responsible: None,
+            software_component: None,
+            service_definition: None,
+            binding_type: None,
+            binding_version: None,
+            binding_category: None,
+        };
+        self.create_object_request(&create_args, tool_name).await?;
+
+        let object_url = build_object_url(create_type, target_upper.as_str(), None);
+        let lock = self
+            .handle_lock_object(
+                json!({ "objectUrl": object_url, "accessMode": "MODIFY" }),
+                "LockObject",
+            )
+            .await?;
+        let lock_handle = extract_json_string(&lock, &["lockHandle"]).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "LockObject did not return lockHandle".to_owned(),
+            }
+        })?;
+        self.update_source_with_lock(
+            format!("{object_url}/source/main").as_str(),
+            cloned_source.as_str(),
+            lock_handle.as_str(),
+            None,
+        )
+        .await?;
+        self.handle_unlock_object(
+            json!({ "objectUrl": object_url, "lockHandle": lock_handle }),
+            "UnlockObject",
+        )
+        .await?;
+        self.handle_activate(
+            json!({ "objectUrl": object_url, "objectName": target_upper }),
+            "Activate",
+        )
+        .await?;
+        Ok(json!({
+            "success": true,
+            "sourceName": source_upper,
+            "targetName": target_upper,
+            "objectType": object_type,
+            "package": package_name
+        }))
+    }
+
+    async fn handle_rename_object(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: RenameObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_type = args
+            .obj_type
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "objType is required".to_owned(),
+            })?;
+        let old_name = args
+            .old_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "oldName is required".to_owned(),
+            })?;
+        let new_name = args
+            .new_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "newName is required".to_owned(),
+            })?;
+        let package_name = args
+            .package_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "packageName is required".to_owned(),
+            })?;
+        let transport = args.transport.unwrap_or_default();
+
+        let clone = self
+            .handle_clone_object(
+                json!({
+                    "object_type": object_type,
+                    "source_name": old_name,
+                    "target_name": new_name,
+                    "package": package_name
+                }),
+                "CloneObject",
+            )
+            .await?;
+        let create_type = normalize_creatable_type(object_type.as_str()).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("unsupported objType `{}`", object_type),
+            }
+        })?;
+        let old_object_url =
+            build_object_url(create_type, old_name.to_ascii_uppercase().as_str(), None);
+        let lock = self
+            .handle_lock_object(
+                json!({ "objectUrl": old_object_url, "accessMode": "MODIFY" }),
+                "LockObject",
+            )
+            .await?;
+        let lock_handle = extract_json_string(&lock, &["lockHandle"]).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "LockObject did not return lockHandle for old object".to_owned(),
+            }
+        })?;
+        let delete = self
+            .handle_delete_object(
+                json!({
+                    "objectUrl": old_object_url,
+                    "lockHandle": lock_handle,
+                    "transport": transport
+                }),
+                "DeleteObject",
+            )
+            .await?;
+        Ok(json!({
+            "success": true,
+            "clone": clone,
+            "delete_old": delete
+        }))
+    }
+
+    async fn handle_edit_source(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: EditSourceArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_url = args
+            .object_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "object_url is required".to_owned(),
+            })?;
+        let old_string = args
+            .old_string
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "old_string is required".to_owned(),
+            })?;
+        let new_string = args
+            .new_string
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "new_string is required".to_owned(),
+            })?;
+        let replace_all = args.replace_all.unwrap_or(false);
+        let case_insensitive = args.case_insensitive.unwrap_or(false);
+        let syntax_check = args.syntax_check.unwrap_or(true);
+        let source_url =
+            if object_url.contains("/includes/") || object_url.ends_with("/source/main") {
+                object_url.clone()
+            } else {
+                format!("{object_url}/source/main")
+            };
+        let source = self
+            .engine
+            .get_raw_text(source_url.as_str(), Some("text/plain"))
+            .await?;
+        let old_pattern = regex::escape(old_string.as_str());
+        let regex = RegexBuilder::new(old_pattern.as_str())
+            .case_insensitive(case_insensitive)
+            .build()
+            .map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("invalid old_string pattern: {error}"),
+            })?;
+        let match_count = regex.find_iter(source.as_str()).count();
+        if match_count == 0 {
+            return Ok(json!({
+                "success": false,
+                "matchCount": 0,
+                "message": "old_string not found in source"
+            }));
+        }
+        if !replace_all && match_count > 1 {
+            return Ok(json!({
+                "success": false,
+                "matchCount": match_count,
+                "message": "old_string matches multiple locations; set replace_all=true or provide more context"
+            }));
+        }
+        let new_source = if replace_all {
+            regex
+                .replace_all(source.as_str(), new_string.as_str())
+                .to_string()
+        } else {
+            regex
+                .replace(source.as_str(), new_string.as_str())
+                .to_string()
+        };
+        if syntax_check {
+            let syntax = self
+                .handle_syntax_check(
+                    json!({
+                        "objectUrl": object_url,
+                        "content": new_source
+                    }),
+                    "SyntaxCheck",
+                )
+                .await?;
+            let raw = syntax
+                .get("raw")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if raw.contains("severity=\"E\"")
+                || raw.contains("severity=\"A\"")
+                || raw.contains("severity=\"X\"")
+            {
+                return Ok(json!({
+                    "success": false,
+                    "matchCount": match_count,
+                    "message": "Edit would introduce syntax errors. Changes NOT saved.",
+                    "syntax": syntax
+                }));
+            }
+        }
+        let lock_target = if object_url.contains("/includes/") {
+            parent_object_uri_from_include(object_url.as_str())
+                .unwrap_or_else(|| object_url.clone())
+        } else {
+            object_url.clone()
+        };
+        let lock = self
+            .handle_lock_object(
+                json!({ "objectUrl": lock_target, "accessMode": "MODIFY" }),
+                "LockObject",
+            )
+            .await?;
+        let lock_handle = extract_json_string(&lock, &["lockHandle"]).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "LockObject did not return lockHandle".to_owned(),
+            }
+        })?;
+        self.update_source_with_lock(
+            source_url.as_str(),
+            new_source.as_str(),
+            lock_handle.as_str(),
+            args.transport.as_deref(),
+        )
+        .await?;
+        self.handle_unlock_object(
+            json!({
+                "objectUrl": lock_target,
+                "lockHandle": lock_handle
+            }),
+            "UnlockObject",
+        )
+        .await?;
+        let activate_target = if object_url.contains("/includes/") {
+            parent_object_uri_from_include(object_url.as_str())
+                .unwrap_or_else(|| object_url.clone())
+        } else {
+            object_url.clone()
+        };
+        let activate_name = activate_target
+            .split('/')
+            .next_back()
+            .unwrap_or_default()
+            .to_ascii_uppercase();
+        let activation = self
+            .handle_activate(
+                json!({
+                    "objectUrl": activate_target,
+                    "objectName": activate_name
+                }),
+                "Activate",
+            )
+            .await?;
+        Ok(json!({
+            "success": true,
+            "matchCount": match_count,
+            "activation": activation,
+            "message": if replace_all {
+                format!("Successfully replaced {} occurrences", match_count)
+            } else {
+                "Successfully edited source".to_owned()
+            }
+        }))
+    }
+
+    async fn handle_save_to_file(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: SaveToFileArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_type = args
+            .object_type
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "object_type/objType is required".to_owned(),
+            })?;
+        let object_name = args
+            .object_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "object_name/objectName is required".to_owned(),
+            })?;
+        let include = args.include.unwrap_or_else(|| "main".to_owned());
+        let source_uri = resolve_source_uri(
+            object_type.as_str(),
+            object_name.as_str(),
+            args.parent.as_deref(),
+            Some(include.as_str()),
+        )
+        .ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: format!("unsupported object_type `{}`", object_type),
+        })?;
+        let source = self
+            .engine
+            .get_raw_text(source_uri.as_str(), Some("text/plain"))
+            .await?;
+
+        let output_path = resolve_output_path(
+            args.output,
+            object_type.as_str(),
+            object_name.as_str(),
+            include.as_str(),
+        );
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("failed to create output directory: {error}"),
+            })?;
+        }
+        fs::write(output_path.as_path(), source.as_bytes()).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("failed to write file: {error}"),
+            }
+        })?;
+        Ok(json!({
+            "objectType": object_type,
+            "objectName": object_name,
+            "filePath": output_path,
+            "lineCount": source.lines().count(),
+            "success": true
+        }))
+    }
+
+    async fn handle_deploy_from_file(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: DeployFromFileArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let file_path = args
+            .file_path
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "file_path is required".to_owned(),
+            })?;
+        let parsed = parse_abap_file_info(file_path.as_str(), tool_name)?;
+        let source = fs::read_to_string(file_path.as_str()).map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("failed to read file `{}`: {error}", file_path),
+            }
+        })?;
+        let transport = args.transport.unwrap_or_default();
+
+        if let Some(include_type) = parsed.include_type.clone() {
+            let parent_url = build_object_url("CLAS/OC", parsed.object_name.as_str(), None);
+            let lock = self
+                .handle_lock_object(
+                    json!({ "objectUrl": parent_url, "accessMode": "MODIFY" }),
+                    "LockObject",
+                )
+                .await?;
+            let lock_handle = extract_json_string(&lock, &["lockHandle"]).ok_or_else(|| {
+                NeuroMcpError::InvalidArguments {
+                    tool: tool_name.to_owned(),
+                    message: "LockObject did not return lockHandle".to_owned(),
+                }
+            })?;
+            if include_type.eq_ignore_ascii_case("testclasses") {
+                let _ = self
+                    .handle_create_test_include(
+                        json!({
+                            "className": parsed.object_name,
+                            "lockHandle": lock_handle,
+                            "transport": transport
+                        }),
+                        "CreateTestInclude",
+                    )
+                    .await;
+            }
+            self.handle_update_class_include(
+                json!({
+                    "className": parsed.object_name,
+                    "includeType": include_type,
+                    "source": source,
+                    "lockHandle": lock_handle,
+                    "transport": transport
+                }),
+                "UpdateClassInclude",
+            )
+            .await?;
+            self.handle_unlock_object(
+                json!({ "objectUrl": parent_url, "lockHandle": lock_handle }),
+                "UnlockObject",
+            )
+            .await?;
+            self.handle_activate(
+                json!({ "objectUrl": parent_url, "objectName": parsed.object_name }),
+                "Activate",
+            )
+            .await?;
+            return Ok(json!({
+                "filePath": file_path,
+                "objectName": parsed.object_name,
+                "objectType": parsed.object_type,
+                "includeType": include_type,
+                "success": true,
+                "created": false
+            }));
+        }
+
+        let object_url = build_object_url(
+            parsed.object_type.as_str(),
+            parsed.object_name.as_str(),
+            parsed.parent_name.as_deref(),
+        );
+        let mut created = false;
+        let exists = self
+            .engine
+            .get_raw_text(object_url.as_str(), Some("application/xml"))
+            .await
+            .is_ok();
+        if !exists {
+            let package_name = args.package_name.unwrap_or_else(|| "$TMP".to_owned());
+            let create_args = CreateObjectArgs {
+                object_type: Some(parsed.object_type.clone()),
+                name: Some(parsed.object_name.clone()),
+                description: Some(format!("Created from file {}", file_path)),
+                package_name: Some(package_name.to_ascii_uppercase()),
+                transport: if transport.trim().is_empty() {
+                    None
+                } else {
+                    Some(transport.clone())
+                },
+                parent_name: parsed.parent_name.clone(),
+                responsible: None,
+                software_component: None,
+                service_definition: None,
+                binding_type: None,
+                binding_version: None,
+                binding_category: None,
+            };
+            self.create_object_request(&create_args, tool_name).await?;
+            created = true;
+        }
+        let lock = self
+            .handle_lock_object(
+                json!({ "objectUrl": object_url, "accessMode": "MODIFY" }),
+                "LockObject",
+            )
+            .await?;
+        let lock_handle = extract_json_string(&lock, &["lockHandle"]).ok_or_else(|| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "LockObject did not return lockHandle".to_owned(),
+            }
+        })?;
+        self.update_source_with_lock(
+            format!("{object_url}/source/main").as_str(),
+            source.as_str(),
+            lock_handle.as_str(),
+            Some(transport.as_str()),
+        )
+        .await?;
+        self.handle_unlock_object(
+            json!({ "objectUrl": object_url, "lockHandle": lock_handle }),
+            "UnlockObject",
+        )
+        .await?;
+        self.handle_activate(
+            json!({ "objectUrl": object_url, "objectName": parsed.object_name }),
+            "Activate",
+        )
+        .await?;
+        Ok(json!({
+            "filePath": file_path,
+            "objectUrl": object_url,
+            "objectName": parsed.object_name,
+            "objectType": parsed.object_type,
+            "success": true,
+            "created": created
+        }))
+    }
+
+    async fn handle_grep_object(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GrepObjectArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_url = args
+            .object_url
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "object_url is required".to_owned(),
+            })?;
+        let pattern = args
+            .pattern
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "pattern is required".to_owned(),
+            })?;
+        self.grep_single_object(
+            object_url.as_str(),
+            pattern.as_str(),
+            args.case_insensitive.unwrap_or(false),
+            args.context_lines.unwrap_or(0),
+        )
+        .await
+    }
+
+    async fn handle_grep_objects(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GrepObjectsArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let object_urls = args
+            .object_urls
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "object_urls is required".to_owned(),
+            })?;
+        let pattern = args
+            .pattern
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "pattern is required".to_owned(),
+            })?;
+        let mut objects = Vec::new();
+        let mut total_matches = 0usize;
+        for object_url in object_urls {
+            let result = self
+                .grep_single_object(
+                    object_url.as_str(),
+                    pattern.as_str(),
+                    args.case_insensitive.unwrap_or(false),
+                    args.context_lines.unwrap_or(0),
+                )
+                .await?;
+            let match_count = result
+                .get("matchCount")
+                .and_then(Value::as_u64)
+                .unwrap_or_default() as usize;
+            if match_count > 0 {
+                total_matches += match_count;
+                objects.push(result);
+            }
+        }
+        Ok(json!({
+            "success": true,
+            "objects": objects,
+            "totalMatches": total_matches,
+            "message": if total_matches == 0 {
+                "No matches found".to_owned()
+            } else {
+                format!("Found {} match(es) across {} object(s)", total_matches, objects.len())
+            }
+        }))
+    }
+
+    async fn handle_grep_package(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GrepPackageArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let package_name = args
+            .package_name
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "package_name is required".to_owned(),
+            })?;
+        let pattern = args
+            .pattern
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "pattern is required".to_owned(),
+            })?;
+        let package_raw = self
+            .handle_get_package(json!({ "packageName": package_name }), "GetPackage")
+            .await?
+            .get("raw")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let type_filters = args
+            .object_types
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        let max_results = args.max_results.unwrap_or(100).max(1) as usize;
+        let mut objects = Vec::new();
+        let mut total_matches = 0usize;
+        for reference in parse_xml_references(package_raw.as_str()) {
+            if !is_source_object_type(reference.object_type.as_str()) {
+                continue;
+            }
+            if !type_filters.is_empty()
+                && !type_filters
+                    .iter()
+                    .any(|filter| filter.eq_ignore_ascii_case(reference.object_type.as_str()))
+            {
+                continue;
+            }
+            let grep_result = self
+                .grep_single_object(
+                    reference.uri.as_str(),
+                    pattern.as_str(),
+                    args.case_insensitive.unwrap_or(false),
+                    0,
+                )
+                .await?;
+            let match_count = grep_result
+                .get("matchCount")
+                .and_then(Value::as_u64)
+                .unwrap_or_default() as usize;
+            if match_count > 0 {
+                total_matches += match_count;
+                objects.push(grep_result);
+            }
+            if objects.len() >= max_results {
+                break;
+            }
+        }
+        Ok(json!({
+            "success": true,
+            "packageName": package_name,
+            "objects": objects,
+            "totalMatches": total_matches,
+            "message": if total_matches == 0 {
+                "No matches found in package".to_owned()
+            } else {
+                format!(
+                    "Found {} match(es) across {} object(s)",
+                    total_matches,
+                    objects.len()
+                )
+            }
+        }))
+    }
+
+    async fn handle_grep_packages(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: GrepPackagesArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let packages = args
+            .packages
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "packages is required".to_owned(),
+            })?;
+        let pattern = args
+            .pattern
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "pattern is required".to_owned(),
+            })?;
+        let include_subpackages = args.include_subpackages.unwrap_or(false);
+        let max_results = args.max_results.unwrap_or(0).max(0) as usize;
+        let mut package_queue = packages.clone();
+        if include_subpackages {
+            let mut seen = BTreeSet::new();
+            let mut expanded = Vec::new();
+            for package in packages {
+                collect_subpackages(self, package.as_str(), &mut seen, &mut expanded).await?;
+            }
+            package_queue = expanded;
+        }
+
+        let mut objects = Vec::new();
+        let mut total_matches = 0usize;
+        for package in package_queue.clone() {
+            let pkg_result = self
+                .handle_grep_package(
+                    json!({
+                        "package_name": package,
+                        "pattern": pattern,
+                        "case_insensitive": args.case_insensitive.unwrap_or(false),
+                        "object_types": args.object_types.clone().unwrap_or_default().join(","),
+                        "max_results": if max_results == 0 { 1000 } else { max_results },
+                    }),
+                    "GrepPackage",
+                )
+                .await?;
+            if let Some(pkg_objects) = pkg_result.get("objects").and_then(Value::as_array) {
+                for object in pkg_objects {
+                    objects.push(object.clone());
+                    total_matches += object
+                        .get("matchCount")
+                        .and_then(Value::as_u64)
+                        .unwrap_or_default() as usize;
+                    if max_results > 0 && objects.len() >= max_results {
+                        break;
+                    }
+                }
+            }
+            if max_results > 0 && objects.len() >= max_results {
+                break;
+            }
+        }
+        Ok(json!({
+            "success": true,
+            "packages": package_queue,
+            "objects": objects,
+            "totalMatches": total_matches
+        }))
+    }
+
+    async fn grep_single_object(
+        &self,
+        object_url: &str,
+        pattern: &str,
+        case_insensitive: bool,
+        context_lines: u32,
+    ) -> Result<Value, NeuroMcpError> {
+        let source_url =
+            if object_url.contains("/includes/") || object_url.ends_with("/source/main") {
+                object_url.to_owned()
+            } else {
+                format!("{object_url}/source/main")
+            };
+        let source = self
+            .engine
+            .get_raw_text(source_url.as_str(), Some("text/plain"))
+            .await?;
+        let regex = RegexBuilder::new(pattern)
+            .case_insensitive(case_insensitive)
+            .build()
+            .map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: "GrepObject".to_owned(),
+                message: format!("invalid regex pattern: {error}"),
+            })?;
+        let lines = source.lines().map(ToOwned::to_owned).collect::<Vec<_>>();
+        let mut matches = Vec::new();
+        for (idx, line) in lines.iter().enumerate() {
+            if regex.is_match(line.as_str()) {
+                let start = idx.saturating_sub(context_lines as usize);
+                let end = usize::min(lines.len(), idx + context_lines as usize + 1);
+                matches.push(json!({
+                    "lineNumber": idx + 1,
+                    "matchedLine": line,
+                    "contextBefore": lines[start..idx].to_vec(),
+                    "contextAfter": lines[idx + 1..end].to_vec()
+                }));
+            }
+        }
+        Ok(json!({
+            "success": true,
+            "objectUrl": object_url,
+            "objectName": object_url.split('/').next_back().unwrap_or_default(),
+            "matches": matches,
+            "matchCount": matches.len(),
+            "message": if matches.is_empty() { "No matches found" } else { "Matches found" }
+        }))
+    }
+
+    async fn handle_execute_abap(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: ExecuteAbapArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let code = args.code.ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "code is required".to_owned(),
+        })?;
+        let prefix = args
+            .program_prefix
+            .unwrap_or_else(|| "ZTEMP_EXEC_".to_owned())
+            .to_ascii_uppercase();
+        let return_variable = args
+            .return_variable
+            .unwrap_or_else(|| "lv_result".to_owned());
+        let millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0);
+        let suffix = format!("{:08}", millis % 100_000_000);
+        let program_name = format!("{prefix}{suffix}");
+        let risk_level = args.risk_level.unwrap_or_else(|| "harmless".to_owned());
+        let risk_level_abap = match risk_level.to_ascii_lowercase().as_str() {
+            "dangerous" => "RISK LEVEL DANGEROUS",
+            "critical" => "RISK LEVEL CRITICAL",
+            _ => "RISK LEVEL HARMLESS",
+        };
+        let source = format!(
+            "REPORT {program_name}.\n\nCLASS ltc_executor DEFINITION FOR TESTING {risk_level_abap} DURATION SHORT.\n  PUBLIC SECTION.\n    METHODS execute_payload FOR TESTING.\nENDCLASS.\n\nCLASS ltc_executor IMPLEMENTATION.\n  METHOD execute_payload.\n    DATA {return_variable} TYPE string.\n    {code}\n    cl_abap_unit_assert=>fail( msg = |EXEC_RESULT:{{ {return_variable} }}| ).\n  ENDMETHOD.\nENDCLASS.\n"
+        );
+        let create_result = self
+            .handle_create_and_activate_program(
+                json!({
+                    "program_name": program_name,
+                    "description": "Temp program for ExecuteABAP",
+                    "package_name": "$TMP",
+                    "source": source
+                }),
+                "CreateAndActivateProgram",
+            )
+            .await?;
+        let object_url = format!(
+            "/sap/bc/adt/programs/programs/{}",
+            encode_path_segment(program_name.to_ascii_uppercase().as_str())
+        );
+        let tests = self
+            .handle_run_unit_tests(json!({ "objectUrl": object_url }), "RunUnitTests")
+            .await?;
+        let tests_raw = tests.get("raw").and_then(Value::as_str).unwrap_or_default();
+        let mut output = Vec::new();
+        let output_regex = Regex::new(r"EXEC_RESULT:([^<\r\n]+)").map_err(|error| {
+            NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("failed to compile execution output regex: {error}"),
+            }
+        })?;
+        for capture in output_regex.captures_iter(tests_raw) {
+            if let Some(value) = capture.get(1) {
+                output.push(value.as_str().trim().to_owned());
+            }
+        }
+        let keep_program = args.keep_program.unwrap_or(false);
+        let cleanup = if keep_program {
+            json!({"skipped": true})
+        } else {
+            match self
+                .handle_lock_object(
+                    json!({ "objectUrl": object_url, "accessMode": "MODIFY" }),
+                    "LockObject",
+                )
+                .await
+            {
+                Ok(lock) => {
+                    if let Some(lock_handle) = extract_json_string(&lock, &["lockHandle"]) {
+                        self.handle_delete_object(
+                            json!({
+                                "objectUrl": object_url,
+                                "lockHandle": lock_handle
+                            }),
+                            "DeleteObject",
+                        )
+                        .await
+                        .unwrap_or_else(|error| json!({ "error": error.to_string() }))
+                    } else {
+                        json!({ "error": "missing lockHandle" })
+                    }
+                }
+                Err(error) => json!({ "error": error.to_string() }),
+            }
+        };
+        Ok(json!({
+            "success": true,
+            "programName": program_name,
+            "output": output,
+            "tests": tests,
+            "create": create_result,
+            "cleanup": cleanup,
+            "message": if output.is_empty() {
+                "Executed successfully (no EXEC_RESULT output captured)"
+            } else {
+                "Executed successfully"
+            }
+        }))
+    }
+
+    async fn handle_list_dependencies(
+        &self,
+        _arguments: Value,
+        _tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        Ok(json!({
+            "dependencies": [
+                {
+                    "name": "abapgit-standalone",
+                    "description": "Single program ZABAPGIT",
+                    "package": "$ABAPGIT",
+                    "available": false
+                },
+                {
+                    "name": "abapgit-dev",
+                    "description": "Developer package structure",
+                    "package": "$ZGIT_DEV",
+                    "available": false
+                }
+            ],
+            "usage": [
+                "InstallAbapGit --edition standalone",
+                "InstallAbapGit --edition dev"
+            ]
+        }))
+    }
+
+    async fn handle_install_abap_git(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: InstallAbapGitArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let edition = args
+            .edition
+            .unwrap_or_else(|| "standalone".to_owned())
+            .to_ascii_lowercase();
+        if edition != "standalone" && edition != "dev" {
+            return Err(NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "edition must be 'standalone' or 'dev'".to_owned(),
+            });
+        }
+        let package = args.package.unwrap_or_else(|| {
+            if edition == "standalone" {
+                "$ABAPGIT".to_owned()
+            } else {
+                "$ZGIT_DEV".to_owned()
+            }
+        });
+        Ok(json!({
+            "status": "not_embedded",
+            "edition": edition,
+            "package": package.to_ascii_uppercase(),
+            "check_only": args.check_only.unwrap_or(false),
+            "message": "Dependency ZIP embedding is required before deployment. Use ListDependencies for guidance."
+        }))
+    }
+
+    async fn handle_install_dummy_test(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: InstallDummyTestArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        if args.check_only.unwrap_or(false) {
+            return Ok(json!({
+                "status": "check_only",
+                "package": "$ZADT_INSTALL_TEST",
+                "interface": "ZIF_DUMMY_TEST",
+                "class": "ZCL_DUMMY_TEST",
+                "message": "Would create/update package, interface and class to verify install workflow"
+            }));
+        }
+        let package = self
+            .handle_create_package(
+                json!({
+                    "name": "$ZADT_INSTALL_TEST",
+                    "description": "Install Tools Test Package",
+                    "parent": "$TMP"
+                }),
+                "CreatePackage",
+            )
+            .await
+            .unwrap_or_else(|error| json!({ "warning": error.to_string() }));
+        let interface_source = "INTERFACE zif_dummy_test\n  PUBLIC.\n\n  METHODS get_value\n    RETURNING VALUE(rv_value) TYPE string.\n\nENDINTERFACE.";
+        let class_source = "CLASS zcl_dummy_test DEFINITION\n  PUBLIC\n  FINAL\n  CREATE PUBLIC.\n\n  PUBLIC SECTION.\n    INTERFACES zif_dummy_test.\nENDCLASS.\n\nCLASS zcl_dummy_test IMPLEMENTATION.\n  METHOD zif_dummy_test~get_value.\n    rv_value = 'Dummy Test Passed'.\n  ENDMETHOD.\nENDCLASS.";
+        let write_interface = self
+            .handle_update_source_by_pattern(
+                json!({
+                    "name": "ZIF_DUMMY_TEST",
+                    "source": interface_source
+                }),
+                "WriteSource",
+                "/sap/bc/adt/oo/interfaces/{name}/source/main",
+                &["interfaceName", "interface_name", "name"],
+            )
+            .await
+            .unwrap_or_else(|error| json!({ "warning": error.to_string() }));
+        let write_class = self
+            .handle_update_source_by_pattern(
+                json!({
+                    "name": "ZCL_DUMMY_TEST",
+                    "source": class_source
+                }),
+                "WriteSource",
+                "/sap/bc/adt/oo/classes/{name}/source/main",
+                &["className", "class_name", "name"],
+            )
+            .await
+            .unwrap_or_else(|error| json!({ "warning": error.to_string() }));
+        Ok(json!({
+            "status": "executed",
+            "package": package,
+            "interface": write_interface,
+            "class": write_class,
+            "cleanup_requested": args.cleanup.unwrap_or(false)
+        }))
+    }
+
+    async fn handle_install_zadtvsp(
+        &self,
+        arguments: Value,
+        tool_name: &str,
+    ) -> Result<Value, NeuroMcpError> {
+        let args: InstallZadtVspArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: error.to_string(),
+            })?;
+        let package = args
+            .package
+            .unwrap_or_else(|| "$ZADT_VSP".to_owned())
+            .to_ascii_uppercase();
+        if !package.starts_with('$') {
+            return Err(NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "package must start with $ for local installation".to_owned(),
+            });
+        }
+        if args.check_only.unwrap_or(false) {
+            return Ok(json!({
+                "status": "check_only",
+                "package": package,
+                "skip_git_service": args.skip_git_service.unwrap_or(false),
+                "message": "Would deploy ZADT_VSP embedded objects (interface + service classes)"
+            }));
+        }
+        Ok(json!({
+            "status": "not_embedded",
+            "package": package,
+            "skip_git_service": args.skip_git_service.unwrap_or(false),
+            "message": "Embedded ABAP payloads are required for InstallZADTVSP deployment."
+        }))
+    }
+
     async fn handle_ws_request(
         &self,
         arguments: Value,
         tool_name: &str,
     ) -> Result<Value, NeuroMcpError> {
-        let args: WsRequestArgs = serde_json::from_value(arguments).map_err(|error| {
-            NeuroMcpError::InvalidArguments {
+        let args: WsRequestArgs =
+            serde_json::from_value(arguments).map_err(|error| NeuroMcpError::InvalidArguments {
                 tool: tool_name.to_owned(),
                 message: error.to_string(),
-            }
-        })?;
+            })?;
 
         let response = self
             .engine
@@ -3051,9 +5602,19 @@ struct GetSourceArgs {
 
 #[derive(Debug, Deserialize)]
 struct FunctionSourceArgs {
-    #[serde(default, alias = "functionName", alias = "function_name", alias = "name")]
+    #[serde(
+        default,
+        alias = "functionName",
+        alias = "function_name",
+        alias = "name"
+    )]
     function_name: Option<String>,
-    #[serde(default, alias = "groupName", alias = "group_name", alias = "functionGroup")]
+    #[serde(
+        default,
+        alias = "groupName",
+        alias = "group_name",
+        alias = "functionGroup"
+    )]
     group_name: Option<String>,
 }
 
@@ -3329,6 +5890,376 @@ struct Ui5DeleteAppArgs {
     app_name: Option<String>,
     #[serde(default)]
     transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CallRfcArgs {
+    #[serde(default)]
+    function: Option<String>,
+    #[serde(default)]
+    params: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MoveObjectArgs {
+    #[serde(default, alias = "objectType", alias = "object_type")]
+    object_type: Option<String>,
+    #[serde(default, alias = "objectName", alias = "object_name")]
+    object_name: Option<String>,
+    #[serde(default, alias = "newPackage", alias = "new_package")]
+    new_package: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetTypeHierarchyArgs {
+    #[serde(default, alias = "sourceUrl", alias = "source_url")]
+    source_url: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    line: Option<u32>,
+    #[serde(default)]
+    column: Option<u32>,
+    #[serde(default, alias = "superTypes", alias = "super_types")]
+    super_types: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitExportArgs {
+    #[serde(default)]
+    packages: Option<String>,
+    #[serde(default)]
+    objects: Option<String>,
+    #[serde(default, alias = "includeSubpackages", alias = "include_subpackages")]
+    include_subpackages: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetClassInfoArgs {
+    #[serde(default, alias = "class_name", alias = "className", alias = "name")]
+    class_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TraceExecutionArgs {
+    #[serde(default, alias = "object_uri", alias = "objectUri")]
+    object_uri: Option<String>,
+    #[serde(default, alias = "max_depth", alias = "maxDepth")]
+    max_depth: Option<u32>,
+    #[serde(default, alias = "run_tests", alias = "runTests")]
+    run_tests: Option<bool>,
+    #[serde(default, alias = "test_object_uri", alias = "testObjectUri")]
+    test_object_uri: Option<String>,
+    #[serde(default, alias = "trace_user", alias = "traceUser")]
+    trace_user: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ActivatePackageArgs {
+    #[serde(default)]
+    package: Option<String>,
+    #[serde(default, alias = "max_objects", alias = "maxObjects")]
+    max_objects: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListDumpsArgs {
+    #[serde(default)]
+    user: Option<String>,
+    #[serde(default, alias = "exception_type", alias = "exceptionType")]
+    exception_type: Option<String>,
+    #[serde(default)]
+    program: Option<String>,
+    #[serde(default)]
+    package: Option<String>,
+    #[serde(default, alias = "date_from", alias = "dateFrom")]
+    date_from: Option<String>,
+    #[serde(default, alias = "date_to", alias = "dateTo")]
+    date_to: Option<String>,
+    #[serde(default, alias = "max_results", alias = "maxResults")]
+    max_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetDumpArgs {
+    #[serde(default, alias = "dump_id", alias = "dumpId")]
+    dump_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListTracesArgs {
+    #[serde(default)]
+    user: Option<String>,
+    #[serde(default, alias = "process_type", alias = "processType")]
+    process_type: Option<String>,
+    #[serde(default, alias = "object_type", alias = "objectType")]
+    object_type: Option<String>,
+    #[serde(default, alias = "max_results", alias = "maxResults")]
+    max_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetTraceArgs {
+    #[serde(default, alias = "trace_id", alias = "traceId")]
+    trace_id: Option<String>,
+    #[serde(default, alias = "tool_type", alias = "toolType")]
+    tool_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListSqlTracesArgs {
+    #[serde(default)]
+    user: Option<String>,
+    #[serde(default, alias = "max_results", alias = "maxResults")]
+    max_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetAsyncResultArgs {
+    #[serde(default, alias = "task_id", alias = "taskId")]
+    task_id: Option<String>,
+    #[serde(default)]
+    wait: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateAndActivateProgramArgs {
+    #[serde(default, alias = "program_name", alias = "programName")]
+    program_name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default, alias = "package_name", alias = "packageName")]
+    package_name: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateClassWithTestsArgs {
+    #[serde(default, alias = "class_name", alias = "className")]
+    class_name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default, alias = "package_name", alias = "packageName")]
+    package_name: Option<String>,
+    #[serde(default, alias = "class_source", alias = "classSource")]
+    class_source: Option<String>,
+    #[serde(default, alias = "test_source", alias = "testSource")]
+    test_source: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateTableArgs {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    package: Option<String>,
+    #[serde(default)]
+    fields: Option<Value>,
+    #[serde(default)]
+    transport: Option<String>,
+    #[serde(default, alias = "delivery_class", alias = "deliveryClass")]
+    delivery_class: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CompareSourceArgs {
+    #[serde(default)]
+    type1: Option<String>,
+    #[serde(default)]
+    name1: Option<String>,
+    #[serde(default)]
+    type2: Option<String>,
+    #[serde(default)]
+    name2: Option<String>,
+    #[serde(default)]
+    include1: Option<String>,
+    #[serde(default)]
+    include2: Option<String>,
+    #[serde(default)]
+    parent1: Option<String>,
+    #[serde(default)]
+    parent2: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CloneObjectArgs {
+    #[serde(default, alias = "object_type", alias = "objectType")]
+    object_type: Option<String>,
+    #[serde(default, alias = "source_name", alias = "sourceName")]
+    source_name: Option<String>,
+    #[serde(default, alias = "target_name", alias = "targetName")]
+    target_name: Option<String>,
+    #[serde(
+        default,
+        alias = "package",
+        alias = "package_name",
+        alias = "packageName"
+    )]
+    package: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RenameObjectArgs {
+    #[serde(
+        default,
+        alias = "objType",
+        alias = "object_type",
+        alias = "objectType"
+    )]
+    obj_type: Option<String>,
+    #[serde(default, alias = "oldName", alias = "old_name")]
+    old_name: Option<String>,
+    #[serde(default, alias = "newName", alias = "new_name")]
+    new_name: Option<String>,
+    #[serde(default, alias = "packageName", alias = "package_name")]
+    package_name: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EditSourceArgs {
+    #[serde(default, alias = "object_url", alias = "objectUrl")]
+    object_url: Option<String>,
+    #[serde(default, alias = "old_string", alias = "oldString")]
+    old_string: Option<String>,
+    #[serde(default, alias = "new_string", alias = "newString")]
+    new_string: Option<String>,
+    #[serde(default, alias = "replace_all", alias = "replaceAll")]
+    replace_all: Option<bool>,
+    #[serde(default, alias = "syntax_check", alias = "syntaxCheck")]
+    syntax_check: Option<bool>,
+    #[serde(default, alias = "case_insensitive", alias = "caseInsensitive")]
+    case_insensitive: Option<bool>,
+    #[serde(default)]
+    transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveToFileArgs {
+    #[serde(default, alias = "object_type", alias = "objType")]
+    object_type: Option<String>,
+    #[serde(default, alias = "object_name", alias = "objectName")]
+    object_name: Option<String>,
+    #[serde(default)]
+    include: Option<String>,
+    #[serde(default)]
+    parent: Option<String>,
+    #[serde(default, alias = "outputPath", alias = "output_dir", alias = "output")]
+    output: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeployFromFileArgs {
+    #[serde(default, alias = "file_path", alias = "filePath")]
+    file_path: Option<String>,
+    #[serde(default, alias = "package_name", alias = "packageName")]
+    package_name: Option<String>,
+    #[serde(default)]
+    transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GrepObjectArgs {
+    #[serde(default, alias = "object_url", alias = "objectUrl")]
+    object_url: Option<String>,
+    #[serde(default)]
+    pattern: Option<String>,
+    #[serde(default, alias = "case_insensitive", alias = "caseInsensitive")]
+    case_insensitive: Option<bool>,
+    #[serde(default, alias = "context_lines", alias = "contextLines")]
+    context_lines: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GrepObjectsArgs {
+    #[serde(default, alias = "object_urls", alias = "objectUrls")]
+    object_urls: Option<Vec<String>>,
+    #[serde(default)]
+    pattern: Option<String>,
+    #[serde(default, alias = "case_insensitive", alias = "caseInsensitive")]
+    case_insensitive: Option<bool>,
+    #[serde(default, alias = "context_lines", alias = "contextLines")]
+    context_lines: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GrepPackageArgs {
+    #[serde(default, alias = "package_name", alias = "packageName")]
+    package_name: Option<String>,
+    #[serde(default)]
+    pattern: Option<String>,
+    #[serde(default, alias = "case_insensitive", alias = "caseInsensitive")]
+    case_insensitive: Option<bool>,
+    #[serde(default, alias = "object_types", alias = "objectTypes")]
+    object_types: Option<String>,
+    #[serde(default, alias = "max_results", alias = "maxResults")]
+    max_results: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GrepPackagesArgs {
+    #[serde(default)]
+    packages: Option<Vec<String>>,
+    #[serde(default, alias = "include_subpackages", alias = "includeSubpackages")]
+    include_subpackages: Option<bool>,
+    #[serde(default)]
+    pattern: Option<String>,
+    #[serde(default, alias = "case_insensitive", alias = "caseInsensitive")]
+    case_insensitive: Option<bool>,
+    #[serde(default, alias = "object_types", alias = "objectTypes")]
+    object_types: Option<Vec<String>>,
+    #[serde(default, alias = "max_results", alias = "maxResults")]
+    max_results: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExecuteAbapArgs {
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default, alias = "risk_level", alias = "riskLevel")]
+    risk_level: Option<String>,
+    #[serde(default, alias = "return_variable", alias = "returnVariable")]
+    return_variable: Option<String>,
+    #[serde(default, alias = "keep_program", alias = "keepProgram")]
+    keep_program: Option<bool>,
+    #[serde(default, alias = "program_prefix", alias = "programPrefix")]
+    program_prefix: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstallAbapGitArgs {
+    #[serde(default)]
+    edition: Option<String>,
+    #[serde(default)]
+    package: Option<String>,
+    #[serde(default, alias = "check_only", alias = "checkOnly")]
+    check_only: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstallDummyTestArgs {
+    #[serde(default, alias = "check_only", alias = "checkOnly")]
+    check_only: Option<bool>,
+    #[serde(default)]
+    cleanup: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstallZadtVspArgs {
+    #[serde(default)]
+    package: Option<String>,
+    #[serde(default, alias = "skip_git_service", alias = "skipGitService")]
+    skip_git_service: Option<bool>,
+    #[serde(default, alias = "check_only", alias = "checkOnly")]
+    check_only: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3856,6 +6787,742 @@ fn build_path_with_query(path: &str, query: &[(&str, String)]) -> String {
     }
 }
 
+#[derive(Debug, Clone)]
+struct XmlReference {
+    name: String,
+    object_type: String,
+    uri: String,
+    parent_uri: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct TableFieldDefinition {
+    name: String,
+    data_type: String,
+    is_key: bool,
+    not_null: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedAbapFileInfo {
+    object_type: String,
+    object_name: String,
+    parent_name: Option<String>,
+    include_type: Option<String>,
+}
+
+fn parse_xml_references(xml: &str) -> Vec<XmlReference> {
+    let tag_regex = match Regex::new(r#"<[A-Za-z0-9:_-]+\s+([^>]+)/?>"#) {
+        Ok(regex) => regex,
+        Err(_) => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for captures in tag_regex.captures_iter(xml) {
+        let attributes = captures
+            .get(1)
+            .map(|value| value.as_str())
+            .unwrap_or_default();
+        let uri = extract_first_attr(
+            attributes,
+            &["adtcore:uri", "uri", "href", "xlink:href", "link"],
+        )
+        .unwrap_or_default();
+        let name = extract_first_attr(attributes, &["adtcore:name", "name", "obj_name"])
+            .unwrap_or_default();
+        let object_type = extract_first_attr(attributes, &["adtcore:type", "type", "obj_type"])
+            .unwrap_or_default();
+        let parent_uri = extract_first_attr(
+            attributes,
+            &["adtcore:parentUri", "parentUri", "parent_uri", "parent-uri"],
+        );
+        if uri.is_empty() && name.is_empty() && object_type.is_empty() {
+            continue;
+        }
+        out.push(XmlReference {
+            name,
+            object_type,
+            uri,
+            parent_uri,
+        });
+    }
+    out
+}
+
+fn extract_first_attr(attributes: &str, names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|name| extract_xml_attr_value(attributes, name))
+}
+
+fn object_type_priority(object_type: &str) -> u32 {
+    match object_type.trim().to_ascii_uppercase().as_str() {
+        "DOMA/DT" => 10,
+        "DTEL/DE" => 20,
+        "TTYP/TT" => 30,
+        "STRU/DS" => 40,
+        "TABL/DT" => 50,
+        "VIEW/V" => 60,
+        "INTF/OI" => 70,
+        "CLAS/OC" => 80,
+        "PROG/P" => 90,
+        "PROG/I" => 100,
+        _ => 500,
+    }
+}
+
+fn extract_first_tag_value(xml: &str, tag_name: &str) -> Option<String> {
+    let escaped = regex::escape(tag_name);
+    let pattern = format!(
+        r"(?is)<(?:[A-Za-z0-9_]+:)?{escaped}\b[^>]*>(?P<value>.*?)</(?:[A-Za-z0-9_]+:)?{escaped}>"
+    );
+    let regex = Regex::new(pattern.as_str()).ok()?;
+    regex
+        .captures(xml)
+        .and_then(|captures| captures.name("value"))
+        .map(|value| value.as_str().trim().to_owned())
+}
+
+fn normalize_trace_id(trace_id: &str) -> String {
+    trace_id
+        .trim()
+        .trim_end_matches('/')
+        .split('/')
+        .next_back()
+        .unwrap_or_default()
+        .trim()
+        .to_owned()
+}
+
+fn normalize_dump_id(dump_id: &str) -> String {
+    dump_id
+        .trim()
+        .trim_end_matches('/')
+        .split('/')
+        .next_back()
+        .unwrap_or_default()
+        .trim()
+        .to_owned()
+}
+
+fn extract_json_string(payload: &Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(value) = find_json_key(payload, key) {
+            if let Some(text) = value.as_str() {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_owned());
+                }
+            } else if value.is_number() || value.is_boolean() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn extract_json_string_array(payload: &Value, keys: &[&str]) -> Vec<String> {
+    for key in keys {
+        if let Some(value) = find_json_key(payload, key) {
+            if let Some(items) = value.as_array() {
+                return items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::trim))
+                    .filter(|item| !item.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect();
+            }
+            if let Some(text) = value.as_str() {
+                let trimmed = text.trim();
+                if trimmed.starts_with('[')
+                    && let Ok(decoded) = serde_json::from_str::<Value>(trimmed)
+                    && let Some(items) = decoded.as_array()
+                {
+                    return items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(str::trim))
+                        .filter(|item| !item.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect();
+                }
+                if !trimmed.is_empty() {
+                    return trimmed
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|item| !item.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect();
+                }
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn find_json_key<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+    match value {
+        Value::Object(map) => {
+            for (name, entry) in map {
+                if name.eq_ignore_ascii_case(key) {
+                    return Some(entry);
+                }
+                if let Some(found) = find_json_key(entry, key) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        Value::Array(items) => items.iter().find_map(|item| find_json_key(item, key)),
+        _ => None,
+    }
+}
+
+fn resolve_source_uri(
+    object_type: &str,
+    object_name: &str,
+    parent_name: Option<&str>,
+    include: Option<&str>,
+) -> Option<String> {
+    let object_type = object_type.trim().to_ascii_uppercase();
+    let object_name = object_name.trim().to_ascii_uppercase();
+    match object_type.as_str() {
+        "PROG" | "PROG/P" => Some(format!(
+            "/sap/bc/adt/programs/programs/{}/source/main",
+            encode_path_segment(object_name.as_str())
+        )),
+        "PROG/I" | "INCL" | "INCLUDE" => Some(format!(
+            "/sap/bc/adt/programs/includes/{}/source/main",
+            encode_path_segment(object_name.as_str())
+        )),
+        "CLAS" | "CLAS/OC" => {
+            let include_type = include.unwrap_or("main").trim();
+            if include_type.is_empty() || include_type.eq_ignore_ascii_case("main") {
+                Some(format!(
+                    "/sap/bc/adt/oo/classes/{}/source/main",
+                    encode_path_segment(object_name.as_str())
+                ))
+            } else {
+                Some(format!(
+                    "/sap/bc/adt/oo/classes/{}/includes/{}",
+                    encode_path_segment(object_name.as_str()),
+                    include_type.to_ascii_lowercase()
+                ))
+            }
+        }
+        "INTF" | "INTF/OI" => Some(format!(
+            "/sap/bc/adt/oo/interfaces/{}/source/main",
+            encode_path_segment(object_name.as_str())
+        )),
+        "FUGR/FF" => {
+            let parent_name = parent_name?.trim().to_ascii_uppercase();
+            Some(format!(
+                "/sap/bc/adt/functions/groups/{}/fmodules/{}/source/main",
+                encode_path_segment(parent_name.as_str()),
+                encode_path_segment(object_name.as_str())
+            ))
+        }
+        "TABL" | "TABL/DT" => Some(format!(
+            "/sap/bc/adt/ddic/tables/{}/source/main",
+            encode_path_segment(object_name.to_ascii_lowercase().as_str())
+        )),
+        "STRU" | "STRU/DS" => Some(format!(
+            "/sap/bc/adt/ddic/structures/{}/source/main",
+            encode_path_segment(object_name.to_ascii_lowercase().as_str())
+        )),
+        "DDLS" | "DDLS/DF" => Some(format!(
+            "/sap/bc/adt/ddic/ddl/sources/{}/source/main",
+            encode_path_segment(object_name.to_ascii_lowercase().as_str())
+        )),
+        "BDEF" | "BDEF/BDO" => Some(format!(
+            "/sap/bc/adt/bo/behaviordefinitions/{}/source/main",
+            encode_path_segment(object_name.to_ascii_lowercase().as_str())
+        )),
+        "SRVD" | "SRVD/SRV" => Some(format!(
+            "/sap/bc/adt/ddic/srvd/sources/{}/source/main",
+            encode_path_segment(object_name.to_ascii_lowercase().as_str())
+        )),
+        "SRVB" | "SRVB/SVB" => Some(format!(
+            "/sap/bc/adt/businessservices/bindings/{}/source/main",
+            encode_path_segment(object_name.to_ascii_lowercase().as_str())
+        )),
+        _ => None,
+    }
+}
+
+fn generate_line_diff(old_label: &str, new_label: &str, left: &str, right: &str) -> Value {
+    let left_lines = left.lines().collect::<Vec<_>>();
+    let right_lines = right.lines().collect::<Vec<_>>();
+    let max_len = left_lines.len().max(right_lines.len());
+    let mut changes = Vec::new();
+    let mut added = 0usize;
+    let mut removed = 0usize;
+    let mut changed = 0usize;
+
+    for index in 0..max_len {
+        let left_line = left_lines.get(index).copied();
+        let right_line = right_lines.get(index).copied();
+        match (left_line, right_line) {
+            (Some(old_line), Some(new_line)) if old_line == new_line => {}
+            (Some(old_line), Some(new_line)) => {
+                changed += 1;
+                changes.push(json!({
+                    "line": index + 1,
+                    "kind": "changed",
+                    "before": old_line,
+                    "after": new_line
+                }));
+            }
+            (Some(old_line), None) => {
+                removed += 1;
+                changes.push(json!({
+                    "line": index + 1,
+                    "kind": "removed",
+                    "before": old_line,
+                    "after": Value::Null
+                }));
+            }
+            (None, Some(new_line)) => {
+                added += 1;
+                changes.push(json!({
+                    "line": index + 1,
+                    "kind": "added",
+                    "before": Value::Null,
+                    "after": new_line
+                }));
+            }
+            (None, None) => {}
+        }
+    }
+
+    json!({
+        "left": old_label,
+        "right": new_label,
+        "equal": changes.is_empty(),
+        "stats": {
+            "added": added,
+            "removed": removed,
+            "changed": changed
+        },
+        "changes": changes
+    })
+}
+
+fn normalize_creatable_type(object_type: &str) -> Option<&'static str> {
+    match object_type.trim().to_ascii_uppercase().as_str() {
+        "PROG" | "PROG/P" | "REPORT" => Some("PROG/P"),
+        "PROG/I" | "INCL" | "INCLUDE" => Some("PROG/I"),
+        "CLAS" | "CLAS/OC" | "CLASS" => Some("CLAS/OC"),
+        "INTF" | "INTF/OI" | "INTERFACE" => Some("INTF/OI"),
+        "FUGR" | "FUGR/F" => Some("FUGR/F"),
+        "FUGR/FF" | "FMOD" | "FUNCTION" => Some("FUGR/FF"),
+        "DEVC" | "DEVC/K" | "PACKAGE" => Some("DEVC/K"),
+        "DDLS" | "DDLS/DF" => Some("DDLS/DF"),
+        "BDEF" | "BDEF/BDO" => Some("BDEF/BDO"),
+        "SRVD" | "SRVD/SRV" => Some("SRVD/SRV"),
+        "SRVB" | "SRVB/SVB" => Some("SRVB/SVB"),
+        _ => None,
+    }
+}
+
+fn parent_object_uri_from_include(object_url: &str) -> Option<String> {
+    let marker = "/sap/bc/adt/oo/classes/";
+    let start = object_url.find(marker)?;
+    let tail = &object_url[start + marker.len()..];
+    let class_name = tail.split('/').next().unwrap_or_default().trim();
+    if class_name.is_empty() {
+        None
+    } else {
+        Some(format!("{marker}{class_name}"))
+    }
+}
+
+fn resolve_output_path(
+    output: Option<String>,
+    object_type: &str,
+    object_name: &str,
+    include: &str,
+) -> PathBuf {
+    let default_name = default_export_filename(object_type, object_name, include);
+    if let Some(target) = output {
+        let trimmed = target.trim();
+        if !trimmed.is_empty() {
+            let path = PathBuf::from(trimmed);
+            let is_dir_hint = trimmed.ends_with('/') || trimmed.ends_with('\\');
+            if is_dir_hint || (path.exists() && path.is_dir()) || path.extension().is_none() {
+                return path.join(default_name);
+            }
+            return path;
+        }
+    }
+    PathBuf::from(default_name)
+}
+
+fn default_export_filename(object_type: &str, object_name: &str, include: &str) -> String {
+    let name = object_name.trim().to_ascii_lowercase();
+    let include = include.trim().to_ascii_lowercase();
+    match object_type.trim().to_ascii_uppercase().as_str() {
+        "CLAS" | "CLAS/OC" => {
+            if include.is_empty() || include == "main" {
+                format!("{name}.clas.abap")
+            } else {
+                format!("{name}.{include}.abap")
+            }
+        }
+        "INTF" | "INTF/OI" => format!("{name}.intf.abap"),
+        "PROG" | "PROG/P" => format!("{name}.prog.abap"),
+        "PROG/I" | "INCL" | "INCLUDE" => format!("{name}.incl.abap"),
+        "TABL" | "TABL/DT" => format!("{name}.tabl.abap"),
+        "DDLS" | "DDLS/DF" => format!("{name}.ddls.abap"),
+        "BDEF" | "BDEF/BDO" => format!("{name}.bdef.abap"),
+        "SRVD" | "SRVD/SRV" => format!("{name}.srvd.abap"),
+        "SRVB" | "SRVB/SVB" => format!("{name}.srvb.abap"),
+        _ => {
+            let typ = object_type
+                .trim()
+                .to_ascii_lowercase()
+                .replace('/', "_")
+                .replace(' ', "_");
+            format!("{name}.{typ}.abap")
+        }
+    }
+}
+
+fn parse_abap_file_info(
+    file_path: &str,
+    tool_name: &str,
+) -> Result<ParsedAbapFileInfo, NeuroMcpError> {
+    let path = Path::new(file_path);
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: format!("invalid file path `{file_path}`"),
+        })?;
+    let without_suffix =
+        file_name
+            .strip_suffix(".abap")
+            .ok_or_else(|| NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: "file extension must be .abap".to_owned(),
+            })?;
+    let mut parts = without_suffix
+        .split('.')
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+        .collect::<Vec<_>>();
+    if parts.len() < 2 {
+        return Err(NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "file name must follow <name>.<type>.abap or <class>.<include>.abap"
+                .to_owned(),
+        });
+    }
+    let suffix = parts.pop().unwrap_or_default().to_ascii_lowercase();
+    let object_name = parts
+        .last()
+        .map(|value| value.to_ascii_uppercase())
+        .unwrap_or_default();
+    let prefix_joined = parts.join(".").to_ascii_uppercase();
+
+    let info = match suffix.as_str() {
+        "prog" | "program" => ParsedAbapFileInfo {
+            object_type: "PROG/P".to_owned(),
+            object_name: prefix_joined,
+            parent_name: None,
+            include_type: None,
+        },
+        "incl" | "include" => ParsedAbapFileInfo {
+            object_type: "PROG/I".to_owned(),
+            object_name: prefix_joined,
+            parent_name: None,
+            include_type: None,
+        },
+        "clas" | "class" => ParsedAbapFileInfo {
+            object_type: "CLAS/OC".to_owned(),
+            object_name: prefix_joined,
+            parent_name: None,
+            include_type: None,
+        },
+        "intf" | "interface" => ParsedAbapFileInfo {
+            object_type: "INTF/OI".to_owned(),
+            object_name: prefix_joined,
+            parent_name: None,
+            include_type: None,
+        },
+        "tabl" | "table" => ParsedAbapFileInfo {
+            object_type: "TABL/DT".to_owned(),
+            object_name: prefix_joined,
+            parent_name: None,
+            include_type: None,
+        },
+        "ddls" | "ddl" => ParsedAbapFileInfo {
+            object_type: "DDLS/DF".to_owned(),
+            object_name: prefix_joined,
+            parent_name: None,
+            include_type: None,
+        },
+        "srvd" => ParsedAbapFileInfo {
+            object_type: "SRVD/SRV".to_owned(),
+            object_name: prefix_joined,
+            parent_name: None,
+            include_type: None,
+        },
+        "srvb" => ParsedAbapFileInfo {
+            object_type: "SRVB/SVB".to_owned(),
+            object_name: prefix_joined,
+            parent_name: None,
+            include_type: None,
+        },
+        "fugr" => ParsedAbapFileInfo {
+            object_type: "FUGR/F".to_owned(),
+            object_name: prefix_joined,
+            parent_name: None,
+            include_type: None,
+        },
+        "fmod" | "func" => {
+            if parts.len() < 2 {
+                return Err(NeuroMcpError::InvalidArguments {
+                    tool: tool_name.to_owned(),
+                    message: "function module file should be <group>.<module>.fmod.abap".to_owned(),
+                });
+            }
+            ParsedAbapFileInfo {
+                object_type: "FUGR/FF".to_owned(),
+                object_name,
+                parent_name: Some(parts[parts.len() - 2].to_ascii_uppercase()),
+                include_type: None,
+            }
+        }
+        "locals_def" | "locals_imp" | "macros" | "testclasses" => ParsedAbapFileInfo {
+            object_type: "CLAS/OC".to_owned(),
+            object_name: prefix_joined,
+            parent_name: None,
+            include_type: Some(suffix),
+        },
+        _ => {
+            return Err(NeuroMcpError::InvalidArguments {
+                tool: tool_name.to_owned(),
+                message: format!("unsupported ABAP file suffix `{suffix}`"),
+            });
+        }
+    };
+    Ok(info)
+}
+
+fn parse_table_fields(
+    fields: Option<Value>,
+    tool_name: &str,
+) -> Result<Vec<TableFieldDefinition>, NeuroMcpError> {
+    let Some(fields_value) = fields else {
+        return Ok(Vec::new());
+    };
+    match fields_value {
+        Value::Array(items) => {
+            let mut out = Vec::new();
+            for item in items {
+                match item {
+                    Value::Object(map) => {
+                        let field_map = map.into_iter().collect::<BTreeMap<String, Value>>();
+                        let name = extract_non_empty_string(
+                            &field_map,
+                            &["name", "fieldName", "field_name", "field"],
+                        )
+                        .ok_or_else(|| {
+                            NeuroMcpError::InvalidArguments {
+                                tool: tool_name.to_owned(),
+                                message: "table field is missing name".to_owned(),
+                            }
+                        })?;
+                        let data_type = extract_non_empty_string(
+                            &field_map,
+                            &["type", "dataType", "data_type", "abapType"],
+                        )
+                        .ok_or_else(|| {
+                            NeuroMcpError::InvalidArguments {
+                                tool: tool_name.to_owned(),
+                                message: format!("field `{name}` is missing type"),
+                            }
+                        })?;
+                        let is_key = field_map
+                            .get("key")
+                            .or_else(|| field_map.get("isKey"))
+                            .and_then(parse_bool_value)
+                            .unwrap_or(false);
+                        let not_null = field_map
+                            .get("not_null")
+                            .or_else(|| field_map.get("notNull"))
+                            .or_else(|| field_map.get("required"))
+                            .and_then(parse_bool_value)
+                            .unwrap_or(false);
+                        out.push(TableFieldDefinition {
+                            name: name.to_ascii_uppercase(),
+                            data_type,
+                            is_key,
+                            not_null,
+                        });
+                    }
+                    Value::String(spec) => {
+                        if let Some(parsed) = parse_table_field_spec(spec.as_str()) {
+                            out.push(parsed);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(out)
+        }
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.starts_with('[') {
+                let decoded = serde_json::from_str::<Value>(trimmed).map_err(|error| {
+                    NeuroMcpError::InvalidArguments {
+                        tool: tool_name.to_owned(),
+                        message: format!("invalid fields JSON string: {error}"),
+                    }
+                })?;
+                return parse_table_fields(Some(decoded), tool_name);
+            }
+            Ok(trimmed
+                .split(';')
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .filter_map(parse_table_field_spec)
+                .collect())
+        }
+        _ => Err(NeuroMcpError::InvalidArguments {
+            tool: tool_name.to_owned(),
+            message: "fields must be array or string".to_owned(),
+        }),
+    }
+}
+
+fn parse_table_field_spec(spec: &str) -> Option<TableFieldDefinition> {
+    let parts = spec
+        .split(':')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .collect::<Vec<_>>();
+    if parts.len() < 2 {
+        return None;
+    }
+    let mut is_key = false;
+    let mut not_null = false;
+    for part in parts.iter().skip(2) {
+        if part.eq_ignore_ascii_case("key") || part.eq_ignore_ascii_case("pk") {
+            is_key = true;
+        }
+        if part.eq_ignore_ascii_case("notnull") || part.eq_ignore_ascii_case("not_null") {
+            not_null = true;
+        }
+    }
+    Some(TableFieldDefinition {
+        name: parts[0].to_ascii_uppercase(),
+        data_type: parts[1].to_owned(),
+        is_key,
+        not_null,
+    })
+}
+
+fn parse_bool_value(value: &Value) -> Option<bool> {
+    match value {
+        Value::Bool(flag) => Some(*flag),
+        Value::String(text) => match text.trim().to_ascii_lowercase().as_str() {
+            "true" | "x" | "1" | "yes" => Some(true),
+            "false" | "0" | "no" | "" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn build_table_ddl(
+    table_name: &str,
+    description: &str,
+    delivery_class: &str,
+    fields: &[TableFieldDefinition],
+) -> String {
+    let mut field_lines = Vec::new();
+    for field in fields {
+        let key = if field.is_key { "key " } else { "" };
+        let not_null = if field.not_null || field.is_key {
+            " not null"
+        } else {
+            ""
+        };
+        field_lines.push(format!(
+            "  {key}{} : {}{};",
+            field.name.to_ascii_lowercase(),
+            field.data_type,
+            not_null
+        ));
+    }
+    format!(
+        "@EndUserText.label : '{}'\n@AbapCatalog.tableCategory : #TRANSPARENT\n@AbapCatalog.deliveryClass : #{}\n@AbapCatalog.dataMaintenance : #ALLOWED\ndefine table {} {{\n{}\n}}\n",
+        description.replace('\'', "''"),
+        delivery_class.trim().to_ascii_uppercase(),
+        table_name.trim().to_ascii_uppercase(),
+        field_lines.join("\n")
+    )
+}
+
+fn is_source_object_type(object_type: &str) -> bool {
+    matches!(
+        object_type.trim().to_ascii_uppercase().as_str(),
+        "PROG/P"
+            | "PROG/I"
+            | "CLAS/OC"
+            | "INTF/OI"
+            | "FUGR/FF"
+            | "DDLS/DF"
+            | "TABL/DT"
+            | "STRU/DS"
+            | "BDEF/BDO"
+            | "SRVD/SRV"
+            | "SRVB/SVB"
+    )
+}
+
+async fn collect_subpackages(
+    facade: &NeuroMcpFacade,
+    package: &str,
+    seen: &mut BTreeSet<String>,
+    expanded: &mut Vec<String>,
+) -> Result<(), NeuroMcpError> {
+    let root = package.trim().to_ascii_uppercase();
+    if root.is_empty() {
+        return Ok(());
+    }
+    let mut queue = Vec::new();
+    if seen.insert(root.clone()) {
+        expanded.push(root.clone());
+        queue.push(root);
+    }
+    while let Some(current) = queue.pop() {
+        let package_data = facade
+            .handle_get_package(json!({ "packageName": current }), "GetPackage")
+            .await?;
+        let raw = package_data
+            .get("raw")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        for reference in parse_xml_references(raw.as_str()) {
+            if !reference.object_type.eq_ignore_ascii_case("DEVC/K") {
+                continue;
+            }
+            let child = reference.name.trim().to_ascii_uppercase();
+            if child.is_empty() {
+                continue;
+            }
+            if seen.insert(child.clone()) {
+                expanded.push(child.clone());
+                queue.push(child);
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3901,13 +7568,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invoke_known_but_unimplemented_tool_returns_explicit_error() {
+    async fn invoke_implemented_tool_reaches_engine() {
         let facade = build_facade().await;
         let error = facade
             .invoke("ActivatePackage", json!({}))
             .await
-            .expect_err("unimplemented parity tool should fail explicitly");
-        assert!(matches!(error, NeuroMcpError::UnsupportedTool { .. }));
+            .expect_err("implemented tool should attempt runtime call in tests");
+        assert!(matches!(error, NeuroMcpError::Engine(_)));
     }
 
     #[tokio::test]

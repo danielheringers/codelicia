@@ -72,6 +72,7 @@ impl AdtClient {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .danger_accept_invalid_certs(config.insecure_tls)
+            .cookie_store(true)
             .build()
             .map_err(|error| AdtClientError::ClientBuild {
                 message: error.to_string(),
@@ -87,8 +88,24 @@ impl AdtClient {
 
     pub async fn ping(&self) -> Result<(), AdtClientError> {
         let url = self.build_url(&self.config.csrf_fetch_path)?;
-        let response = self.send_authenticated(self.client.get(url)).await?;
-        let _ = ensure_success("ping", response, &[StatusCode::OK, StatusCode::NO_CONTENT]).await?;
+        let response = self
+            .send_authenticated(
+                self.client
+                    .head(url)
+                    .header("x-csrf-token", "fetch")
+                    .header(header::ACCEPT, "*/*"),
+            )
+            .await?;
+        let _ = ensure_success(
+            "ping",
+            response,
+            &[
+                StatusCode::OK,
+                StatusCode::NO_CONTENT,
+                StatusCode::BAD_REQUEST,
+            ],
+        )
+        .await?;
         Ok(())
     }
 
@@ -264,11 +281,7 @@ impl AdtClient {
         let response = ensure_success(
             "delete_text",
             response,
-            &[
-                StatusCode::OK,
-                StatusCode::ACCEPTED,
-                StatusCode::NO_CONTENT,
-            ],
+            &[StatusCode::OK, StatusCode::ACCEPTED, StatusCode::NO_CONTENT],
         )
         .await?;
         response_to_string(response).await
@@ -357,7 +370,11 @@ impl AdtClient {
         &self,
         builder: reqwest::RequestBuilder,
     ) -> Result<Response, AdtClientError> {
-        let response = self.apply_auth(builder).send().await?;
+        let response = self
+            .apply_auth(builder)
+            .header("x-sap-adt-sessiontype", "stateful")
+            .send()
+            .await?;
         Ok(response)
     }
 
@@ -407,6 +424,7 @@ impl AdtClient {
     {
         let mut builder = self.client.request(method, url);
         builder = self.apply_auth(builder);
+        builder = builder.header("x-sap-adt-sessiontype", "stateful");
 
         if let Some(token) = csrf_token {
             builder = builder.header("x-csrf-token", token);
@@ -419,20 +437,32 @@ impl AdtClient {
 
     async fn fetch_csrf_token(&self) -> Result<String, AdtClientError> {
         let url = self.build_url(&self.config.csrf_fetch_path)?;
-
         let response = self
-            .send_authenticated(self.client.get(url).header("x-csrf-token", "fetch"))
+            .send_authenticated(
+                self.client
+                    .head(url)
+                    .header("x-csrf-token", "fetch")
+                    .header(header::ACCEPT, "*/*"),
+            )
             .await?;
-        let response = ensure_success(
-            "fetch_csrf_token",
-            response,
-            &[StatusCode::OK, StatusCode::NO_CONTENT],
-        )
-        .await?;
-
+        let status = response.status();
         let token = header_value_to_string(response.headers(), "x-csrf-token")
-            .filter(|value| !value.is_empty())
-            .ok_or(AdtClientError::MissingCsrfToken)?;
+            .filter(|value| {
+                let normalized = value.trim();
+                !normalized.is_empty() && !normalized.eq_ignore_ascii_case("required")
+            })
+            .ok_or_else(|| {
+                if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
+                    AdtClientError::UnexpectedStatus {
+                        operation: "fetch_csrf_token",
+                        status,
+                        body: "authentication/authorization failed while fetching CSRF token"
+                            .to_owned(),
+                    }
+                } else {
+                    AdtClientError::MissingCsrfToken
+                }
+            })?;
 
         Ok(token)
     }
@@ -512,7 +542,9 @@ fn parse_xml_object_reference(
 
     for attribute in element.attributes() {
         let attribute = attribute.map_err(|error| {
-            AdtClientError::Protocol(format!("invalid ADT XML attribute in search response: {error}"))
+            AdtClientError::Protocol(format!(
+                "invalid ADT XML attribute in search response: {error}"
+            ))
         })?;
 
         let local_key = xml_local_name(attribute.key.as_ref());
@@ -808,7 +840,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        Mock::given(method("GET"))
+        Mock::given(method("HEAD"))
             .and(path("/csrf"))
             .and(header("x-csrf-token", "fetch"))
             .respond_with(ResponseTemplate::new(200).insert_header("x-csrf-token", "token-123"))
@@ -854,7 +886,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        Mock::given(method("GET"))
+        Mock::given(method("HEAD"))
             .and(path("/csrf"))
             .and(header("x-csrf-token", "fetch"))
             .respond_with(ResponseTemplate::new(200).insert_header("x-csrf-token", "token-123"))
@@ -899,7 +931,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        Mock::given(method("GET"))
+        Mock::given(method("HEAD"))
             .and(path("/csrf"))
             .and(header("x-csrf-token", "fetch"))
             .respond_with(ResponseTemplate::new(200).insert_header("x-csrf-token", "token-123"))
@@ -944,7 +976,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        Mock::given(method("GET"))
+        Mock::given(method("HEAD"))
             .and(path("/csrf"))
             .and(header("x-csrf-token", "fetch"))
             .respond_with(ResponseTemplate::new(200).insert_header("x-csrf-token", "token-123"))

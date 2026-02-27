@@ -284,7 +284,7 @@ const fn default_timeout_secs() -> u64 {
 }
 
 fn default_csrf_fetch_path() -> String {
-    "/sap/bc/adt".to_owned()
+    "/sap/bc/adt/core/discovery".to_owned()
 }
 
 fn default_search_path() -> String {

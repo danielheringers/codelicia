@@ -19,7 +19,7 @@ struct Cli {
     adt_base_url: String,
     #[arg(long, default_value_t = 30)]
     adt_timeout_secs: u64,
-    #[arg(long, default_value = "/sap/bc/adt")]
+    #[arg(long, default_value = "/sap/bc/adt/core/discovery")]
     adt_csrf_fetch_path: String,
     #[arg(
         long,

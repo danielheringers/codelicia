@@ -89,7 +89,10 @@ impl NeuroEngine {
         object_uri: &str,
         accept: Option<&str>,
     ) -> Result<String, NeuroEngineError> {
-        self.adt.get_text(object_uri, accept).await.map_err(Into::into)
+        self.adt
+            .get_text(object_uri, accept)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn post_raw_text(
@@ -164,8 +167,8 @@ impl NeuroEngine {
             ),
             None => guarded_runtime_diagnose_component(
                 "neuro_ws",
-                DiagnoseStatus::Unavailable,
-                "WebSocket is not configured",
+                DiagnoseStatus::Degraded,
+                "WebSocket is not configured (optional realtime features disabled)",
                 None,
             ),
         };
@@ -304,7 +307,7 @@ mod tests {
             base_url: "http://127.0.0.1:18080".to_string(),
             auth: AdtAuth::Anonymous,
             timeout_secs: 1,
-            csrf_fetch_path: "/sap/bc/adt".to_string(),
+            csrf_fetch_path: "/sap/bc/adt/core/discovery".to_string(),
             endpoints: AdtHttpEndpoints {
                 search_objects_path:
                     "/sap/bc/adt/repository/informationsystem/search?operation=quickSearch"
@@ -397,6 +400,26 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn diagnose_reports_degraded_when_ws_is_not_configured() {
+        let engine = build_engine_with_policy(neuro_types::SafetyPolicy {
+            read_only: false,
+            blocked_source_patterns: Vec::new(),
+            allowed_ws_domains: Vec::new(),
+            require_etag_for_updates: false,
+        });
+
+        let report = engine.diagnose().await;
+        let ws_component = report
+            .components
+            .iter()
+            .find(|component| component.component == "neuro_ws")
+            .expect("neuro_ws component should exist");
+
+        assert_eq!(ws_component.status, DiagnoseStatus::Degraded);
+        assert_eq!(report.overall_status, DiagnoseStatus::Degraded);
+    }
+
     #[test]
     fn diagnose_component_guard_blocks_legacy_name() {
         let component = guarded_runtime_diagnose_component(
@@ -442,7 +465,7 @@ mod tests {
                     .and_then(|value| value.parse::<u64>().ok())
                     .unwrap_or(30),
                 csrf_fetch_path: env::var("NEURO_SMOKE_ADT_CSRF_FETCH_PATH")
-                    .unwrap_or_else(|_| "/sap/bc/adt".to_owned()),
+                    .unwrap_or_else(|_| "/sap/bc/adt/core/discovery".to_owned()),
                 endpoints: AdtHttpEndpoints {
                     search_objects_path: env::var("NEURO_SMOKE_ADT_SEARCH_PATH").unwrap_or_else(
                         |_| {
@@ -477,3 +500,4 @@ mod tests {
         );
     }
 }
+

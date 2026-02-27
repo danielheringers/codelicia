@@ -10,6 +10,7 @@ neuro-engine.workspace = true
 neuro-types.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+regex.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 url.workspace = true

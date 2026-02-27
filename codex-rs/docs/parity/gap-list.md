@@ -1,11 +1,11 @@
 # VBS -> Neuro Gap List
 
-- generated_at_utc: 2026-02-26T10:36:02.6679865Z
+- generated_at_utc: 2026-02-26T11:06:46.3564676Z
 - vbs_tools_total: 123
 - neuro_mcp_catalog_matched: 123
 - neuro_mcp_catalog_missing: 0
-- neuro_mcp_functionally_implemented: 87
-- neuro_mcp_functionally_missing: 36
+- neuro_mcp_functionally_implemented: 123
+- neuro_mcp_functionally_missing: 0
 
 ## Catalog Matched
 
@@ -140,6 +140,7 @@ _none_
 ## Functionally Implemented
 
 - Activate
+- ActivatePackage
 - AMDPDebuggerResume
 - AMDPDebuggerStart
 - AMDPDebuggerStep
@@ -148,10 +149,16 @@ _none_
 - AMDPGetVariables
 - AMDPSetBreakpoint
 - AnalyzeCallGraph
+- CallRFC
+- CloneObject
 - CodeCompletion
 - CompareCallGraphs
+- CompareSource
+- CreateAndActivateProgram
+- CreateClassWithTests
 - CreateObject
 - CreatePackage
+- CreateTable
 - CreateTestInclude
 - CreateTransport
 - DebuggerAttach
@@ -163,8 +170,13 @@ _none_
 - DeleteBreakpoint
 - DeleteObject
 - DeleteTransport
+- DeployFromFile
+- EditSource
+- ExecuteABAP
+- ExportToFile
 - FindDefinition
 - FindReferences
+- GetAsyncResult
 - GetATCCustomizing
 - GetBreakpoints
 - GetCalleesOf
@@ -174,7 +186,9 @@ _none_
 - GetClass
 - GetClassComponents
 - GetClassInclude
+- GetClassInfo
 - GetConnectionInfo
+- GetDump
 - GetFeatures
 - GetFunction
 - GetFunctionGroup
@@ -188,30 +202,52 @@ _none_
 - GetPrettyPrinterSettings
 - GetProgram
 - GetSource
+- GetSQLTraceState
 - GetStructure
 - GetSystemInfo
 - GetTable
 - GetTableContents
 - GetTextElements
+- GetTrace
 - GetTransaction
 - GetTransport
 - GetTransportInfo
+- GetTypeHierarchy
 - GetTypeInfo
 - GetUserTransports
 - GetVariants
+- GitExport
+- GitTypes
+- GrepObject
+- GrepObjects
+- GrepPackage
+- GrepPackages
+- ImportFromFile
+- InstallAbapGit
+- InstallDummyTest
+- InstallZADTVSP
+- ListDependencies
+- ListDumps
+- ListSQLTraces
+- ListTraces
 - ListTransports
 - LockObject
+- MoveObject
 - PrettyPrint
 - PublishServiceBinding
 - ReleaseTransport
+- RenameObject
 - RunATCCheck
 - RunReport
+- RunReportAsync
 - RunUnitTests
+- SaveToFile
 - SearchObject
 - SetBreakpoint
 - SetPrettyPrinterSettings
 - SetTextElements
 - SyntaxCheck
+- TraceExecution
 - UI5CreateApp
 - UI5DeleteApp
 - UI5DeleteFile
@@ -229,39 +265,4 @@ _none_
 
 ## Functionally Missing
 
-- ActivatePackage
-- CallRFC
-- CloneObject
-- CompareSource
-- CreateAndActivateProgram
-- CreateClassWithTests
-- CreateTable
-- DeployFromFile
-- EditSource
-- ExecuteABAP
-- ExportToFile
-- GetAsyncResult
-- GetClassInfo
-- GetDump
-- GetSQLTraceState
-- GetTrace
-- GetTypeHierarchy
-- GitExport
-- GitTypes
-- GrepObject
-- GrepObjects
-- GrepPackage
-- GrepPackages
-- ImportFromFile
-- InstallAbapGit
-- InstallDummyTest
-- InstallZADTVSP
-- ListDependencies
-- ListDumps
-- ListSQLTraces
-- ListTraces
-- MoveObject
-- RenameObject
-- RunReportAsync
-- SaveToFile
-- TraceExecution
+_none_
