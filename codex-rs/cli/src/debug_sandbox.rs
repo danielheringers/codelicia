@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
+use codex_core::config::NetworkProxyAuditMetadata;
 use codex_core::exec_env::create_env;
 use codex_core::landlock::spawn_command_under_linux_sandbox;
 #[cfg(target_os = "macos")]
@@ -213,12 +214,20 @@ async fn run_command_under_sandbox(
     #[cfg(not(target_os = "macos"))]
     let _ = log_denials;
 
+    let managed_network_requirements_enabled = config.managed_network_requirements_enabled();
+
     // This proxy should only live for the lifetime of the child process.
     let network_proxy = match config.permissions.network.as_ref() {
         Some(spec) => Some(
-            spec.start_proxy()
-                .await
-                .map_err(|err| anyhow::anyhow!("failed to start managed network proxy: {err}"))?,
+            spec.start_proxy(
+                config.permissions.sandbox_policy.get(),
+                None,
+                None,
+                managed_network_requirements_enabled,
+                NetworkProxyAuditMetadata::default(),
+            )
+            .await
+            .map_err(|err| anyhow::anyhow!("failed to start managed network proxy: {err}"))?,
         ),
         None => None,
     };

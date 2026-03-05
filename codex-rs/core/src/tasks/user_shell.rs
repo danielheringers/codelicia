@@ -14,7 +14,7 @@ use crate::exec::ExecToolCallOutput;
 use crate::exec::SandboxType;
 use crate::exec::StdoutStream;
 use crate::exec::StreamOutput;
-use crate::exec::execute_exec_env;
+use crate::exec::execute_exec_request;
 use crate::exec_env::create_env;
 use crate::parse_command::parse_command;
 use crate::protocol::EventMsg;
@@ -66,6 +66,10 @@ impl SessionTask for UserShellCommandTask {
         TaskKind::Regular
     }
 
+    fn span_name(&self) -> &'static str {
+        "session_task.user_shell"
+    }
+
     async fn run(
         self: Arc<Self>,
         session: Arc<SessionTaskContext>,
@@ -101,6 +105,10 @@ pub(crate) async fn execute_user_shell_command(
         // Auxiliary mode runs within an existing active turn. That turn already
         // emitted TurnStarted, so emitting another TurnStarted here would create
         // duplicate turn lifecycle events and confuse clients.
+        // TODO(ccunningham): After TurnStarted, emit model-visible turn context diffs for
+        // standalone lifecycle tasks (for example /shell, and review once it emits TurnStarted).
+        // `/compact` is an intentional exception because compaction requests should not include
+        // freshly reinjected context before the summary/replacement history is applied.
         let event = EventMsg::TurnStarted(TurnStartedEvent {
             turn_id: turn_context.sub_id.clone(),
             model_context_window: turn_context.model_context_window(),
@@ -119,6 +127,7 @@ pub(crate) async fn execute_user_shell_command(
         &display_command,
         session_shell.as_ref(),
         turn_context.cwd.as_path(),
+        &turn_context.shell_environment_policy.r#set,
     );
 
     let call_id = Uuid::new_v4().to_string();
@@ -142,6 +151,7 @@ pub(crate) async fn execute_user_shell_command(
         )
         .await;
 
+    let sandbox_policy = SandboxPolicy::DangerFullAccess;
     let exec_env = ExecRequest {
         command: exec_command.clone(),
         cwd: cwd.clone(),
@@ -156,6 +166,7 @@ pub(crate) async fn execute_user_shell_command(
         sandbox: SandboxType::None,
         windows_sandbox_level: turn_context.windows_sandbox_level,
         sandbox_permissions: SandboxPermissions::UseDefault,
+        sandbox_policy: sandbox_policy.clone(),
         justification: None,
         arg0: None,
     };
@@ -166,8 +177,7 @@ pub(crate) async fn execute_user_shell_command(
         tx_event: session.get_tx_event(),
     });
 
-    let sandbox_policy = SandboxPolicy::DangerFullAccess;
-    let exec_result = execute_exec_env(exec_env, &sandbox_policy, stdout_stream)
+    let exec_result = execute_exec_request(exec_env, &sandbox_policy, stdout_stream, None)
         .or_cancel(&cancellation_token)
         .await;
 

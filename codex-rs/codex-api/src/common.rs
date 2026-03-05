@@ -9,6 +9,7 @@ use futures::Stream;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
@@ -56,6 +57,9 @@ pub enum ResponseEvent {
     Created,
     OutputItemDone(ResponseItem),
     OutputItemAdded(ResponseItem),
+    /// Emitted when the server includes `OpenAI-Model` on the stream response.
+    /// This can differ from the requested model when backend safety routing applies.
+    ServerModel(String),
     /// Emitted when `X-Reasoning-Included: true` is present on the response,
     /// meaning the server already accounted for past reasoning tokens and the
     /// client should not re-estimate them.
@@ -63,8 +67,6 @@ pub enum ResponseEvent {
     Completed {
         response_id: String,
         token_usage: Option<TokenUsage>,
-        /// Whether the client can append more items to a long-running websocket response.
-        can_append: bool,
     },
     OutputTextDelta(String),
     ReasoningSummaryDelta {
@@ -151,6 +153,8 @@ pub struct ResponsesApiRequest {
     pub stream: bool,
     pub include: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_cache_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<TextControls>,
@@ -170,8 +174,11 @@ impl From<&ResponsesApiRequest> for ResponseCreateWsRequest {
             store: request.store,
             stream: request.stream,
             include: request.include.clone(),
+            service_tier: request.service_tier.clone(),
             prompt_cache_key: request.prompt_cache_key.clone(),
             text: request.text.clone(),
+            generate: None,
+            client_metadata: None,
         }
     }
 }
@@ -191,23 +198,23 @@ pub struct ResponseCreateWsRequest {
     pub stream: bool,
     pub include: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_cache_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<TextControls>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generate: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_metadata: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct ResponseAppendWsRequest {
-    pub input: Vec<ResponseItem>,
-}
 #[derive(Debug, Serialize)]
 #[serde(tag = "type")]
 #[allow(clippy::large_enum_variant)]
 pub enum ResponsesWsRequest {
     #[serde(rename = "response.create")]
     ResponseCreate(ResponseCreateWsRequest),
-    #[serde(rename = "response.append")]
-    ResponseAppend(ResponseAppendWsRequest),
 }
 
 pub fn create_text_param_for_request(
